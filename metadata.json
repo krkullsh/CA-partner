@@ -1,0 +1,6 @@
+{
+  "name": "CA-Lab",
+  "description": "ICAI CA Intermediate (New Scheme) AI Study Companion featuring Teach Lab, Catch Lab Out, Depth-Controlled Explanations, Spot the Difference, and Lab's Verdict.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
