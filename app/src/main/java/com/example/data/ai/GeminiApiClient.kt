@@ -10,6 +10,14 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import com.example.data.model.ComparisonRow
+import com.example.data.model.ConceptDifference
+import com.example.data.model.CatchLabScenario
+import com.example.data.model.LabVerdict
+import com.example.data.model.PaperCode
+import com.example.data.model.SubtleError
+import com.example.data.model.SyllabusTopic
+import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 
 object GeminiApiClient {
@@ -18,10 +26,11 @@ object GeminiApiClient {
 
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectionPool(okhttp3.ConnectionPool(2, 15, TimeUnit.SECONDS))
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(45, TimeUnit.SECONDS)
-            .writeTimeout(20, TimeUnit.SECONDS)
+            .connectionPool(okhttp3.ConnectionPool(2, 30, TimeUnit.SECONDS))
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(90, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(90, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()
     }
@@ -153,8 +162,374 @@ When requested after a teaching session or practice question, output a structure
                 }
                 Result.failure(Exception("Empty response from Gemini"))
             }
+        } catch (e: SocketTimeoutException) {
+            Log.w(TAG, "Gemini API content generation timed out: ${e.message}")
+            Result.failure(Exception("Request timed out. Please try again."))
         } catch (e: Exception) {
             Log.e(TAG, "Exception calling Gemini API", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun generateJsonVerdict(
+        topic: SyllabusTopic,
+        conversationText: String,
+        apiKey: String
+    ): Result<LabVerdict> = withContext(Dispatchers.IO) {
+        try {
+            if (apiKey.isBlank()) {
+                return@withContext Result.failure(IllegalStateException("No Gemini API key available"))
+            }
+
+            val verdictPrompt = """
+You are acting in [LAB'S VERDICT] mode for the ICAI CA Intermediate study companion "CA-Lab".
+The student explained the following topic to you in [TEACH LAB] mode:
+Paper: ${topic.paper.title}
+Topic: ${topic.topicName}
+Key Statutory Provisions / Conditions:
+${topic.keyProvisions.joinToString("\n") { "- $it" }}
+ICAI Examiner Pitfall: ${topic.commonExaminerPitfalls}
+
+Student's Explanation Transcript:
+\"\"\"
+$conversationText
+\"\"\"
+
+Evaluate the student's explanation against the required statutory provisions and common pitfalls.
+Keep bullet points in whatYouNailed and whatSlipped concise (max 20 words each). Keep icaiExaminerTip and nextAction concise.
+Output strictly a JSON object with this schema:
+{
+  "masteryScore": <integer between 0 and 100>,
+  "whatYouNailed": [<array of string bullet points of strong provisions/rules correctly cited>],
+  "whatSlipped": [<array of string bullet points of missed provisos, limits, keywords, or conditions>],
+  "icaiExaminerTip": "<specific examiner comment for this topic>",
+  "nextAction": "<one actionable revision recommendation>"
+}
+""".trimIndent()
+
+            val requestBodyJson = JSONObject()
+            val systemInstruction = JSONObject().apply {
+                put("parts", JSONArray().put(JSONObject().put("text", "You are CA-Lab's verdict evaluator. Always return strictly valid JSON matching the requested schema.")))
+            }
+            requestBodyJson.put("system_instruction", systemInstruction)
+
+            val contentsArray = JSONArray()
+            val currentTurn = JSONObject().apply {
+                put("role", "user")
+                put("parts", JSONArray().put(JSONObject().put("text", verdictPrompt)))
+            }
+            contentsArray.put(currentTurn)
+            requestBodyJson.put("contents", contentsArray)
+
+            val genConfig = JSONObject().apply {
+                put("temperature", 0.2)
+                put("maxOutputTokens", 750)
+                put("responseMimeType", "application/json")
+            }
+            requestBodyJson.put("generationConfig", genConfig)
+
+            val urlWithKey = "$BASE_URL?key=$apiKey"
+            val body = requestBodyJson.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url(urlWithKey)
+                .post(body)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string().orEmpty()
+                    Log.e(TAG, "Gemini API HTTP ${response.code}: $errorBody")
+                    return@withContext Result.failure(Exception("Gemini API error (${response.code})"))
+                }
+
+                val responseStr = response.body?.string() ?: ""
+                val json = JSONObject(responseStr)
+                val candidates = json.optJSONArray("candidates")
+                if (candidates != null && candidates.length() > 0) {
+                    val candidate = candidates.getJSONObject(0)
+                    val contentObj = candidate.optJSONObject("content")
+                    val parts = contentObj?.optJSONArray("parts")
+                    if (parts != null && parts.length() > 0) {
+                        var text = parts.getJSONObject(0).optString("text").trim()
+                        if (text.startsWith("```json")) {
+                            text = text.removePrefix("```json").trim()
+                        }
+                        if (text.startsWith("```")) {
+                            text = text.removePrefix("```").trim()
+                        }
+                        if (text.endsWith("```")) {
+                            text = text.removeSuffix("```").trim()
+                        }
+
+                        val parsedObj = JSONObject(text)
+                        val score = parsedObj.optInt("masteryScore", 70).coerceIn(0, 100)
+                        val nailedArr = parsedObj.optJSONArray("whatYouNailed") ?: JSONArray()
+                        val slippedArr = parsedObj.optJSONArray("whatSlipped") ?: JSONArray()
+                        val nailedList = mutableListOf<String>()
+                        for (i in 0 until nailedArr.length()) nailedList.add(nailedArr.getString(i))
+                        val slippedList = mutableListOf<String>()
+                        for (i in 0 until slippedArr.length()) slippedList.add(slippedArr.getString(i))
+
+                        val tip = parsedObj.optString("icaiExaminerTip", topic.commonExaminerPitfalls)
+                        val action = parsedObj.optString("nextAction", "Revise the study material and statutory provisions for ${topic.topicName}.")
+
+                        val verdict = LabVerdict(
+                            masteryScore = score,
+                            paperName = topic.paper.title,
+                            topicName = topic.topicName,
+                            whatYouNailed = if (nailedList.isNotEmpty()) nailedList else listOf("Demonstrated conceptual understanding"),
+                            whatSlipped = if (slippedList.isNotEmpty()) slippedList else listOf("Check exact ICAI legal wording"),
+                            icaiExaminerTip = if (tip.isNotBlank()) tip else topic.commonExaminerPitfalls,
+                            nextAction = action
+                        )
+                        return@withContext Result.success(verdict)
+                    }
+                }
+                Result.failure(Exception("Empty or invalid verdict response from Gemini"))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception parsing Gemini verdict", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun generateAiTrickScenario(
+        paper: PaperCode,
+        topicName: String,
+        apiKey: String
+    ): Result<CatchLabScenario> = withContext(Dispatchers.IO) {
+        try {
+            if (apiKey.isBlank()) {
+                return@withContext Result.failure(IllegalStateException("No Gemini API key available"))
+            }
+
+            val prompt = """
+You are acting in [CATCH LAB OUT] mode for the ICAI CA Intermediate study companion "CA-Lab".
+Paper: ${paper.title}
+Topic: $topicName
+
+Draft a short case memo (3-4 sentences, max 100 words) on this topic containing EXACTLY 3 subtle, realistic mistakes or traps (e.g. incorrect threshold limit, mixing up section numbers, wrong ITC blocked credit condition, treating an adjusting event as non-adjusting, or wrong variance formula multiplier).
+Keep each subtle error explanation and correctRuleOrLimit strictly under 35 words. Keep correctIcaiProvision under 40 words.
+Output strictly a JSON object with this schema:
+{
+  "title": "<catchy case study title>",
+  "caseSnippet": "<paragraph with the 3 subtle errors numbered 1, 2, 3 in realistic audit/tax/law context>",
+  "subtleErrors": [
+    {
+      "wrongStatement": "<what statement is incorrect>",
+      "errorExplanation": "<why this is an error according to ICAI law or standard>",
+      "correctRuleOrLimit": "<the correct statutory provision, section, standard, or limit>"
+    }
+  ],
+  "correctIcaiProvision": "<concise 2-3 sentence summary of the correct governing provision>"
+}
+""".trimIndent()
+
+            val requestBodyJson = JSONObject()
+            val systemInstruction = JSONObject().apply {
+                put("parts", JSONArray().put(JSONObject().put("text", "You are CA-Lab's Trick Mode scenario generator. Always output strictly valid JSON conforming to the requested schema with exactly 3 subtleErrors.")))
+            }
+            requestBodyJson.put("system_instruction", systemInstruction)
+
+            val contentsArray = JSONArray()
+            val currentTurn = JSONObject().apply {
+                put("role", "user")
+                put("parts", JSONArray().put(JSONObject().put("text", prompt)))
+            }
+            contentsArray.put(currentTurn)
+            requestBodyJson.put("contents", contentsArray)
+
+            val genConfig = JSONObject().apply {
+                put("temperature", 0.4)
+                put("maxOutputTokens", 750)
+                put("responseMimeType", "application/json")
+            }
+            requestBodyJson.put("generationConfig", genConfig)
+
+            val urlWithKey = "$BASE_URL?key=$apiKey"
+            val body = requestBodyJson.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder().url(urlWithKey).post(body).build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string().orEmpty()
+                    Log.e(TAG, "Gemini API HTTP ${response.code}: $errorBody")
+                    return@withContext Result.failure(Exception("Gemini API error (${response.code})"))
+                }
+
+                val responseStr = response.body?.string() ?: ""
+                val json = JSONObject(responseStr)
+                val candidates = json.optJSONArray("candidates")
+                if (candidates != null && candidates.length() > 0) {
+                    val candidate = candidates.getJSONObject(0)
+                    val contentObj = candidate.optJSONObject("content")
+                    val parts = contentObj?.optJSONArray("parts")
+                    if (parts != null && parts.length() > 0) {
+                        var text = parts.getJSONObject(0).optString("text").trim()
+                        if (text.startsWith("```json")) text = text.removePrefix("```json").trim()
+                        if (text.startsWith("```")) text = text.removePrefix("```").trim()
+                        if (text.endsWith("```")) text = text.removeSuffix("```").trim()
+
+                        val parsedObj = JSONObject(text)
+                        val title = parsedObj.optString("title", "AI Generated Trick Case: $topicName")
+                        val caseSnippet = parsedObj.optString("caseSnippet", "Review the following case notes and find the subtle traps.")
+                        val correctIcaiProvision = parsedObj.optString("correctIcaiProvision", "Always verify statutory provisions in ICAI Study Material.")
+                        val subtleErrorsArr = parsedObj.optJSONArray("subtleErrors") ?: JSONArray()
+                        val subtleErrorsList = mutableListOf<SubtleError>()
+
+                        for (i in 0 until subtleErrorsArr.length()) {
+                            val errObj = subtleErrorsArr.getJSONObject(i)
+                            subtleErrorsList.add(
+                                SubtleError(
+                                    wrongStatement = errObj.optString("wrongStatement", "Subtle Trap #${i + 1}"),
+                                    errorExplanation = errObj.optString("errorExplanation", "Incorrect statutory treatment."),
+                                    correctRuleOrLimit = errObj.optString("correctRuleOrLimit", "Check standard rule.")
+                                )
+                            )
+                        }
+
+                        val scenario = CatchLabScenario(
+                            id = "ai_scenario_" + System.currentTimeMillis(),
+                            paper = paper,
+                            topic = topicName,
+                            title = title,
+                            caseSnippet = caseSnippet,
+                            errorCount = subtleErrorsList.size.coerceAtLeast(1),
+                            subtleErrors = subtleErrorsList,
+                            correctIcaiProvision = correctIcaiProvision
+                        )
+                        return@withContext Result.success(scenario)
+                    }
+                }
+                Result.failure(Exception("Empty response from Gemini"))
+            }
+        } catch (e: SocketTimeoutException) {
+            Log.w(TAG, "Gemini API trick scenario request timed out: ${e.message}")
+            Result.failure(Exception("Generation timed out. Switching to offline engine..."))
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception creating AI trick scenario", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun generateAiConceptDifference(
+        query: String,
+        paper: PaperCode?,
+        apiKey: String
+    ): Result<ConceptDifference> = withContext(Dispatchers.IO) {
+        try {
+            if (apiKey.isBlank()) {
+                return@withContext Result.failure(IllegalStateException("No Gemini API key available"))
+            }
+
+            val prompt = """
+You are acting in [SPOT THE DIFFERENCE] mode for the ICAI CA Intermediate study companion "CA-Lab".
+The student wants a side-by-side comparison for: "$query"
+
+Determine the two contrasting concepts (Concept A and Concept B) in CA Intermediate (New Scheme) syllabus.
+Generate a structured side-by-side comparison table with 4 to 5 distinct bases of difference, plus an unforgettable ICAI Exam Memory Hook.
+Keep conceptAValue and conceptBValue concise (max 25 words each). Keep memoryHook punchy (1 sentence).
+Output strictly a JSON object with this schema:
+{
+  "title": "<e.g. $query>",
+  "conceptA": "<Concept A name>",
+  "conceptB": "<Concept B name>",
+  "comparisonPoints": [
+    {
+      "basisOfDifference": "<e.g. Nature / Governing Section / Statutory Limit / Disclosure>",
+      "conceptAValue": "<treatment / rule under Concept A>",
+      "conceptBValue": "<treatment / rule under Concept B>"
+    }
+  ],
+  "memoryHook": "<punchy 1-sentence exam memory hook>"
+}
+""".trimIndent()
+
+            val requestBodyJson = JSONObject()
+            val systemInstruction = JSONObject().apply {
+                put("parts", JSONArray().put(JSONObject().put("text", "You are CA-Lab's Spot the Difference comparison generator. Always return strictly valid JSON matching the requested schema.")))
+            }
+            requestBodyJson.put("system_instruction", systemInstruction)
+
+            val contentsArray = JSONArray()
+            val currentTurn = JSONObject().apply {
+                put("role", "user")
+                put("parts", JSONArray().put(JSONObject().put("text", prompt)))
+            }
+            contentsArray.put(currentTurn)
+            requestBodyJson.put("contents", contentsArray)
+
+            val genConfig = JSONObject().apply {
+                put("temperature", 0.3)
+                put("maxOutputTokens", 750)
+                put("responseMimeType", "application/json")
+            }
+            requestBodyJson.put("generationConfig", genConfig)
+
+            val urlWithKey = "$BASE_URL?key=$apiKey"
+            val body = requestBodyJson.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder().url(urlWithKey).post(body).build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string().orEmpty()
+                    Log.e(TAG, "Gemini API HTTP ${response.code}: $errorBody")
+                    return@withContext Result.failure(Exception("Gemini API error (${response.code})"))
+                }
+
+                val responseStr = response.body?.string() ?: ""
+                val json = JSONObject(responseStr)
+                val candidates = json.optJSONArray("candidates")
+                if (candidates != null && candidates.length() > 0) {
+                    val candidate = candidates.getJSONObject(0)
+                    val contentObj = candidate.optJSONObject("content")
+                    val parts = contentObj?.optJSONArray("parts")
+                    if (parts != null && parts.length() > 0) {
+                        var text = parts.getJSONObject(0).optString("text").trim()
+                        if (text.startsWith("```json")) text = text.removePrefix("```json").trim()
+                        if (text.startsWith("```")) text = text.removePrefix("```").trim()
+                        if (text.endsWith("```")) text = text.removeSuffix("```").trim()
+
+                        val parsedObj = JSONObject(text)
+                        val title = parsedObj.optString("title", query)
+                        val conceptA = parsedObj.optString("conceptA", "Concept A")
+                        val conceptB = parsedObj.optString("conceptB", "Concept B")
+                        val memoryHook = parsedObj.optString("memoryHook", "Contrast the statutory bases carefully.")
+                        val rowsArr = parsedObj.optJSONArray("comparisonPoints") ?: JSONArray()
+                        val rowsList = mutableListOf<ComparisonRow>()
+
+                        for (i in 0 until rowsArr.length()) {
+                            val r = rowsArr.getJSONObject(i)
+                            rowsList.add(
+                                ComparisonRow(
+                                    basisOfDifference = r.optString("basisOfDifference", "Point ${i + 1}"),
+                                    conceptAValue = r.optString("conceptAValue", "-"),
+                                    conceptBValue = r.optString("conceptBValue", "-")
+                                )
+                            )
+                        }
+
+                        val difference = ConceptDifference(
+                            id = "ai_diff_" + System.currentTimeMillis(),
+                            paper = paper ?: PaperCode.PAPER_1,
+                            title = title,
+                            conceptA = conceptA,
+                            conceptB = conceptB,
+                            comparisonPoints = if (rowsList.isNotEmpty()) rowsList else listOf(
+                                ComparisonRow("Primary Distinction", "Check ICAI Study Material", "Check ICAI Study Material")
+                            ),
+                            memoryHook = memoryHook
+                        )
+                        return@withContext Result.success(difference)
+                    }
+                }
+                Result.failure(Exception("Empty response from Gemini"))
+            }
+        } catch (e: SocketTimeoutException) {
+            Log.w(TAG, "Gemini API concept difference request timed out: ${e.message}")
+            Result.failure(Exception("Comparison timed out. Switching to offline engine..."))
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception creating AI concept difference", e)
             Result.failure(e)
         }
     }

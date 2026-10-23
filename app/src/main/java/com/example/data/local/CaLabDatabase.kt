@@ -37,13 +37,15 @@ data class VerdictEntity(
         } catch (_: Exception) {}
 
         return LabVerdict(
+            id = id,
             masteryScore = masteryScore,
             paperName = paperName,
             topicName = topicName,
             whatYouNailed = nailedList,
             whatSlipped = slippedList,
             icaiExaminerTip = examinerTip,
-            nextAction = nextAction
+            nextAction = nextAction,
+            createdAt = createdAt
         )
     }
 
@@ -127,7 +129,7 @@ abstract class CaLabDatabase : RoomDatabase() {
                     CaLabDatabase::class.java,
                     "ca_lab_database.db"
                 )
-                .fallbackToDestructiveMigration()
+                .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 INSTANCE = instance
                 instance

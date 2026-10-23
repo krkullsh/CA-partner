@@ -1,8 +1,12 @@
 package com.example.data.ai
 
 import com.example.data.curriculum.CaSyllabusData
+import com.example.data.model.CatchLabScenario
+import com.example.data.model.ComparisonRow
+import com.example.data.model.ConceptDifference
 import com.example.data.model.LabVerdict
 import com.example.data.model.PaperCode
+import com.example.data.model.SubtleError
 import com.example.data.model.SyllabusTopic
 
 object OfflineLabEngine {
@@ -22,69 +26,36 @@ object OfflineLabEngine {
     ): String {
         val lower = userExplanation.lowercase()
 
-        // Targeted follow-up doubts based on Paper & Topic
-        return when (topic.paper) {
-            PaperCode.PAPER_1 -> {
-                if (turnCount == 1) {
-                    "Wait Boss, what about the financial year-end adjustments? What happens if an event occurs AFTER the balance sheet date but BEFORE the board approves the accounts? Does it change the balance sheet numbers or just go into the board report notes?"
-                } else if (!lower.contains("going concern") && !lower.contains("dividend")) {
-                    "Hold on! What if the company incurs a massive loss that destroys the going concern assumption? Does that follow the same rule, or is it an exception?"
-                } else if (!lower.contains("disclosure") && !lower.contains("proviso")) {
-                    "Got it! But what specific disclosure is required in the Notes to Accounts if we classify it as a non-adjusting event? Does ICAI expect the financial quantification?"
+        // Find which key provisions the student has not mentioned yet
+        val unmentionedProvisions = topic.keyProvisions.filter { prov ->
+            val keywords = prov.split(" ", ":", "-", ",", "(", ")")
+                .map { it.trim().lowercase() }
+                .filter { it.length > 3 && it !in listOf("under", "shall", "where", "which", "their", "these", "other", "after", "before", "every", "first", "total", "cases") }
+            keywords.none { lower.contains(it) }
+        }
+
+        return when {
+            turnCount <= 1 -> {
+                if (unmentionedProvisions.isNotEmpty()) {
+                    val targetProvision = unmentionedProvisions.first()
+                    "Wait Boss! You gave an interesting start on **${topic.topicName}**, but what about: *\"$targetProvision\"*? How does that specific statutory rule or threshold work in practice?"
                 } else {
-                    "Understood Boss! I think I've got the core concept. Do you want to test me more or should I prepare my **Lab's Verdict** on your explanation?"
+                    "Hold on Boss! You've explained the basics of **${topic.topicName}**, but are there any crucial exceptions, threshold limits, or provisos (\"Provided that...\") that change this treatment?"
                 }
             }
-            PaperCode.PAPER_2 -> {
-                if (turnCount == 1) {
-                    "Hold on Boss! You mentioned the approval, but is it a **Simple Board Resolution**, a **Unanimous Board Resolution**, or a **Special Resolution** passed by shareholders? And does it require an 'AND' or an 'OR' condition between the thresholds?"
-                } else if (!lower.contains("penalty") && !lower.contains("punishment") && !lower.contains("fine")) {
-                    "Wait, what if the director blatantly takes the loan anyway? What are the penal consequences under the Companies Act for both the company and the defaulting director?"
-                } else if (!lower.contains("wholly owned") && !lower.contains("holding")) {
-                    "Does this restriction also apply to loans given by a Holding company to its Wholly Owned Subsidiary (WOS), or is there an express statutory exemption?"
+            turnCount == 2 -> {
+                "Hold on, what about this common exam trap: *\"${topic.commonExaminerPitfalls}\"*? If the ICAI examiner gives a tricky practical scenario testing this exact point, how should we solve or report it?"
+            }
+            turnCount == 3 -> {
+                if (unmentionedProvisions.isNotEmpty()) {
+                    val nextTarget = unmentionedProvisions.first()
+                    "Wait Boss, I'm still a bit fuzzy on: *\"$nextTarget\"*! What working note, compliance disclosure, or computation step does ICAI expect here?"
                 } else {
-                    "That clears up the confusion! Whenever you're ready, tap 'Give Verdict' so I can assess how well you covered this provision."
+                    "Understood Boss! But what happens if management or the company fails to follow this requirement? Are there penal consequences, audit report modifications, or tax disallowances?"
                 }
             }
-            PaperCode.PAPER_3 -> {
-                if (turnCount == 1) {
-                    "Wait Boss! What is the exact monetary threshold limit? If the invoice is ₹29,000, do we deduct TDS? And what happens if there are multiple smaller contracts throughout the year exceeding ₹1,00,000?"
-                } else if (!lower.contains("pan") && !lower.contains("206aa")) {
-                    "What if the payee refuses to give their PAN card? Do we deduct at normal rates or does Section 206AA trigger a 20% higher rate?"
-                } else if (topic.id.contains("gst") && !lower.contains("cash")) {
-                    "Under GST RCM, can our client pay this tax using their existing Electronic Credit Ledger balance, or does the government strictly mandate payment in CASH?"
-                } else {
-                    "Crystal clear on the tax provision! Ready for the verdict whenever you say 'Give Verdict'."
-                }
-            }
-            PaperCode.PAPER_4 -> {
-                if (turnCount == 1) {
-                    "Wait Boss! In this variance calculation, do we multiply the difference by the **Standard Price** or the **Actual Price**? I always get confused between the purchasing department's fault and the factory floor's fault!"
-                } else if (!lower.contains("abnormal") && !lower.contains("normal")) {
-                    "How do we treat abnormal losses in the cost sheet? Does it get loaded onto the good units, or is it directly transferred to the Costing P&L account?"
-                } else {
-                    "Understood the costing mechanism! Would you like me to evaluate your explanation with **Lab's Verdict** now?"
-                }
-            }
-            PaperCode.PAPER_5 -> {
-                if (turnCount == 1) {
-                    "Boss, what if the client's management firmly refuses our request to send external confirmations? Can we just accept an oral explanation or management representation letter?"
-                } else if (!lower.contains("alternative") && !lower.contains("tcwg")) {
-                    "What specific alternative audit procedures must the audit team perform to gather Sufficient Appropriate Audit Evidence (SAAE)?"
-                } else if (!lower.contains("opinion") && !lower.contains("sa 705")) {
-                    "If the refusal is completely unjustified and amounts are material and pervasive, which opinion does SA 705 require: Qualified, Adverse, or Disclaimer?"
-                } else {
-                    "Great explanation of the audit standard! Tap 'Give Verdict' to see your mastery score and gap analysis."
-                }
-            }
-            PaperCode.PAPER_6 -> {
-                if (turnCount == 1) {
-                    "Wait Boss! When calculating Degree of Financial Leverage (DFL), how do we handle Preference Share Dividends? Do we just subtract it directly from EBIT, or do we have to gross it up for taxes like `Dp / (1 - t)`?"
-                } else if (!lower.contains("market value") && !lower.contains("book value")) {
-                    "When calculating WACC, which weights are preferred by ICAI: Book Value weights or Market Value weights? And why?"
-                } else {
-                    "Awesome, that connects the financial theory to exam practice! Let me know when you want 'Lab's Verdict'."
-                }
+            else -> {
+                "Understood Boss! I think that completely ties together **${topic.topicName}**. Whenever you're ready, tap **'Give Verdict'** so I can evaluate your explanation against the ICAI standards!"
             }
         }
     }
@@ -122,13 +93,9 @@ object OfflineLabEngine {
         // Clamp score between 55 and 98
         val finalScore = score.coerceIn(55, 96)
 
-        val nextAction = when (topic.paper) {
-            PaperCode.PAPER_1 -> "Revise AS 4 Para 8 vs Para 13 disclosure guidelines in Study Material Module 1."
-            PaperCode.PAPER_2 -> "Practice drafting board resolution clauses and Sec 186 calculation tables."
-            PaperCode.PAPER_3 -> "Review Section 194C / 194J threshold limits and Sec 17(5) blocked credits."
-            PaperCode.PAPER_4 -> "Solve 2 standard costing comprehensive variance reconciliation problems."
-            PaperCode.PAPER_5 -> "Read SA 505 Para 8 on management refusal and SA 705 audit report modifications."
-            PaperCode.PAPER_6 -> "Solve leverage calculation with preference dividends and tax grossing up."
+        val nextAction = when {
+            slipped.isNotEmpty() -> "Revise ${topic.topicName} in ICAI Study Material, especially: ${slipped.first().removePrefix("Missed specifying: ")}."
+            else -> "Solve 2 past exam / RTP case studies on ${topic.topicName} to polish answer structure."
         }
 
         return LabVerdict(
@@ -139,6 +106,102 @@ object OfflineLabEngine {
             whatSlipped = if (slipped.isNotEmpty()) slipped else listOf("Minor wording differences from ICAI technical terminology"),
             icaiExaminerTip = topic.commonExaminerPitfalls,
             nextAction = nextAction
+        )
+    }
+
+    fun generateOfflineTrickScenario(topic: SyllabusTopic): CatchLabScenario {
+        val topicName = topic.topicName
+        val paper = topic.paper
+        val provisions = topic.keyProvisions
+        val pitfall = topic.commonExaminerPitfalls
+
+        val subtleErrors = mutableListOf<SubtleError>()
+
+        // Error 1: Common examiner pitfall
+        subtleErrors.add(
+            SubtleError(
+                wrongStatement = "Article treated the statutory threshold as an optional recommendation.",
+                errorExplanation = pitfall.ifBlank { "Failure to distinguish mandatory compliance from discretionary exemptions under ICAI standards." },
+                correctRuleOrLimit = provisions.firstOrNull() ?: "Strict adherence to ICAI statutory provisions."
+            )
+        )
+
+        // Error 2: Second key provision misapplication
+        val secondProv = provisions.getOrNull(1) ?: provisions.firstOrNull() ?: "Compliance with statutory conditions"
+        subtleErrors.add(
+            SubtleError(
+                wrongStatement = "Article calculated compliance without applying the standard proviso conditions.",
+                errorExplanation = "Under ${paper.title}, exceptions and provisos modify the primary rule.",
+                correctRuleOrLimit = secondProv
+            )
+        )
+
+        // Error 3: Presentation or disclosure failure
+        val thirdProv = provisions.getOrNull(2) ?: "Mandatory statutory note / disclosure in financial statements"
+        subtleErrors.add(
+            SubtleError(
+                wrongStatement = "Article omitted the mandatory disclosure in the final audit documentation.",
+                errorExplanation = "Non-disclosure violates ICAI presentation standards for $topicName.",
+                correctRuleOrLimit = thirdProv
+            )
+        )
+
+        return CatchLabScenario(
+            id = "offline_scenario_" + System.currentTimeMillis(),
+            paper = paper,
+            topic = topicName,
+            title = "Case Audit Review: $topicName",
+            caseSnippet = "During a review of $topicName (${paper.title}), the junior article made 3 critical oversights: 1. Applied an unverified exemption without checking mandatory preconditions; 2. Misapplied the statutory limit without reviewing amended provisos; and 3. Omitted the required disclosure from the final compliance notes.",
+            errorCount = 3,
+            subtleErrors = subtleErrors,
+            correctIcaiProvision = "Under $topicName, compliance requires fulfilling all preconditions specified in ${provisions.firstOrNull() ?: "the ICAI Study Material"} and avoiding the trap regarding $pitfall."
+        )
+    }
+
+    fun generateOfflineConceptDifference(query: String, paper: PaperCode?): ConceptDifference {
+        val clean = query.trim()
+        val parts = if (clean.contains(" vs ", ignoreCase = true)) {
+            clean.split(Regex("(?i)\\s+vs\\s+"))
+        } else if (clean.contains(" and ", ignoreCase = true)) {
+            clean.split(Regex("(?i)\\s+and\\s+"))
+        } else {
+            listOf(clean, "Standard Alternate")
+        }
+
+        val conceptA = parts.getOrNull(0)?.trim()?.takeIf { it.isNotEmpty() } ?: "Concept A"
+        val conceptB = parts.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() } ?: "Concept B"
+
+        val rows = listOf(
+            ComparisonRow(
+                basisOfDifference = "Governing Scope & Meaning",
+                conceptAValue = "$conceptA represents statutory provisions or procedures under CA Inter syllabus.",
+                conceptBValue = "$conceptB represents contrasting statutory requirements or treatment."
+            ),
+            ComparisonRow(
+                basisOfDifference = "Applicability & Conditions",
+                conceptAValue = "Applies when specific statutory criteria or standards are triggered.",
+                conceptBValue = "Applies under distinct conditions or general default provisions."
+            ),
+            ComparisonRow(
+                basisOfDifference = "Statutory Treatment & Computation",
+                conceptAValue = "Requires specific computation, recognition, or compliance workflow.",
+                conceptBValue = "Requires separate accounting, disclosure, or audit procedure."
+            ),
+            ComparisonRow(
+                basisOfDifference = "ICAI Exam Focus",
+                conceptAValue = "Examiners test precise keywords and section/standard numbers for $conceptA.",
+                conceptBValue = "Examiners test exceptions, proviso conditions, and disclosures for $conceptB."
+            )
+        )
+
+        return ConceptDifference(
+            id = "offline_diff_" + System.currentTimeMillis(),
+            paper = paper ?: PaperCode.PAPER_1,
+            title = "$conceptA vs $conceptB",
+            conceptA = conceptA,
+            conceptB = conceptB,
+            comparisonPoints = rows,
+            memoryHook = "Anchor $conceptA to specific statutory conditions and contrast with $conceptB defaults."
         )
     }
 }

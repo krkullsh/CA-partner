@@ -4,10 +4,12 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,9 +26,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Search
+import com.example.data.model.StandardBlueprint
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -59,12 +68,16 @@ import androidx.compose.ui.unit.sp
 import com.example.data.curriculum.CaSyllabusData
 import com.example.data.model.ExplanationDepth
 import com.example.data.model.PaperCode
+import com.example.ui.components.FormattedText
+import com.example.ui.theme.Amber500
 import com.example.ui.viewmodel.CaLabViewModel
 
 @Composable
 fun AskLabScreen(viewModel: CaLabViewModel) {
     val state by viewModel.askState.collectAsState()
+    val bookmarkedIds by viewModel.bookmarkedIds.collectAsState()
     val context = LocalContext.current
+    var selectedModule by remember(state.selectedPaper) { mutableStateOf("All") }
 
     LazyColumn(
         modifier = Modifier
@@ -73,13 +86,32 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
             .testTag("ask_lab_screen"),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Paper selection chips
+        // Paper selection chips & Bookmarked Only toggle
         item {
             Spacer(modifier = Modifier.height(4.dp))
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                item {
+                    FilterChip(
+                        selected = state.showBookmarkedOnly,
+                        onClick = { viewModel.toggleAskBookmarkedOnly() },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (state.showBookmarkedOnly) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        label = { Text("Bookmarked (LDR)", fontSize = 12.sp) },
+                        modifier = Modifier.testTag("ask_bookmarked_filter_chip"),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Amber500.copy(alpha = 0.2f),
+                            selectedLabelColor = Amber500
+                        )
+                    )
+                }
                 items(PaperCode.entries, key = { it.name }) { paper ->
                     val isSelected = state.selectedPaper == paper
                     FilterChip(
@@ -122,33 +154,93 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
             )
         }
 
-        // Topic quick chips
+        // Topic quick chips & Module filtering
         item {
-            val topics = androidx.compose.runtime.remember(state.selectedPaper) {
+            val allTopics = androidx.compose.runtime.remember(state.selectedPaper) {
                 CaSyllabusData.getTopicsForPaper(state.selectedPaper)
             }
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                items(topics, key = { it.id }) { t ->
-                    val isSelected = state.selectedTopic?.id == t.id
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier
-                            .clickable { viewModel.selectAskTopic(t) }
-                            .testTag("topic_chip_${t.id}")
+            val availableModules = androidx.compose.runtime.remember(allTopics) {
+                listOf("All") + allTopics.map { it.moduleName }.distinct()
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Module filter chips when multiple modules exist
+                if (availableModules.size > 2) {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(
-                            text = t.topicName.take(28) + if (t.topicName.length > 28) "..." else "",
-                            fontSize = 11.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
+                        items(availableModules, key = { it }) { mod ->
+                            val isModSelected = selectedModule == mod
+                            FilterChip(
+                                selected = isModSelected,
+                                onClick = { selectedModule = mod },
+                                label = { Text(mod, fontSize = 11.sp) },
+                                modifier = Modifier.testTag("ask_module_chip_${mod.replace(" ", "_")}"),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            )
+                        }
                     }
                 }
+
+                val topics = allTopics.filter {
+                    (selectedModule == "All" || it.moduleName == selectedModule) &&
+                    (!state.showBookmarkedOnly || bookmarkedIds.contains(it.id))
+                }
+
+                if (topics.isEmpty() && state.showBookmarkedOnly) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "⭐ No bookmarked topics for ${state.selectedPaper.shortName} yet! Tap the bookmark icon on any topic to save for LDR.",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                } else {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(topics, key = { it.id }) { t ->
+                            val isSelected = state.selectedTopic?.id == t.id
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier
+                                    .clickable { viewModel.selectAskTopic(t) }
+                                    .testTag("topic_chip_${t.id}")
+                            ) {
+                                Text(
+                                    text = t.topicName.take(30) + if (t.topicName.length > 30) "..." else "",
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Standard Summary Blueprint (Scope, Recognition & Measurement, Disclosures)
+        if (state.selectedTopic?.blueprint != null) {
+            item {
+                StandardSummaryBlueprintSection(
+                    topicName = state.selectedTopic!!.topicName,
+                    blueprint = state.selectedTopic!!.blueprint!!
+                )
             }
         }
 
@@ -236,19 +328,38 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
-                                modifier = Modifier.widthIn(max = 240.dp)
+                                modifier = Modifier.widthIn(max = 210.dp)
                             )
                         }
 
-                        IconButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("CA-Lab Note", state.displayedContent))
-                                Toast.makeText(context, "Copied explanation to clipboard!", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.testTag("copy_explanation_button")
-                        ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(20.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val isTopicBookmarked = state.selectedTopic?.let { bookmarkedIds.contains(it.id) } ?: false
+                            IconButton(
+                                onClick = {
+                                    state.selectedTopic?.let {
+                                        viewModel.toggleBookmark(it.id, "TOPIC", it.topicName, it.paper.title)
+                                    }
+                                },
+                                modifier = Modifier.testTag("bookmark_active_topic_button")
+                            ) {
+                                Icon(
+                                    imageVector = if (isTopicBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                    contentDescription = "Bookmark Topic for LDR",
+                                    tint = if (isTopicBookmarked) Amber500 else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("CA-Lab Note", state.displayedContent))
+                                    Toast.makeText(context, "Copied explanation to clipboard!", Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.testTag("copy_explanation_button")
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(20.dp))
+                            }
                         }
                     }
 
@@ -268,7 +379,7 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
                             }
                         }
                     } else {
-                        Text(
+                        FormattedText(
                             text = state.displayedContent,
                             style = MaterialTheme.typography.bodyMedium,
                             lineHeight = 22.sp
@@ -279,3 +390,189 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
         }
     }
 }
+
+@Composable
+fun StandardSummaryBlueprintSection(
+    topicName: String,
+    blueprint: StandardBlueprint,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("standard_summary_blueprint")
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MenuBook,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Standard Summary Blueprint",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "3-Pillar Rapid Architecture for Exam Revision",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                if (maxWidth >= 600.dp) {
+                    // 3-Column Layout on larger displays / tablets
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        BlueprintPillarCard(
+                            stepNumber = "1",
+                            title = "Scope & Applicability",
+                            content = blueprint.scope,
+                            accentColor = Color(0xFF0284C7),
+                            icon = Icons.Default.CheckCircle,
+                            modifier = Modifier.weight(1f)
+                        )
+                        BlueprintPillarCard(
+                            stepNumber = "2",
+                            title = "Recognition & Measurement",
+                            content = blueprint.recognitionAndMeasurement,
+                            accentColor = Color(0xFF0D9488),
+                            icon = Icons.Default.Calculate,
+                            modifier = Modifier.weight(1f)
+                        )
+                        BlueprintPillarCard(
+                            stepNumber = "3",
+                            title = "Disclosures & Reporting",
+                            content = blueprint.disclosure,
+                            accentColor = Color(0xFFD97706),
+                            icon = Icons.Default.FactCheck,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                } else {
+                    // 3-Card Stacked Layout on phone screens
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        BlueprintPillarCard(
+                            stepNumber = "1",
+                            title = "Scope & Applicability",
+                            content = blueprint.scope,
+                            accentColor = Color(0xFF0284C7),
+                            icon = Icons.Default.CheckCircle,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        BlueprintPillarCard(
+                            stepNumber = "2",
+                            title = "Recognition & Measurement",
+                            content = blueprint.recognitionAndMeasurement,
+                            accentColor = Color(0xFF0D9488),
+                            icon = Icons.Default.Calculate,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        BlueprintPillarCard(
+                            stepNumber = "3",
+                            title = "Disclosures & Reporting",
+                            content = blueprint.disclosure,
+                            accentColor = Color(0xFFD97706),
+                            icon = Icons.Default.FactCheck,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BlueprintPillarCard(
+    stepNumber: String,
+    title: String,
+    content: String,
+    accentColor: Color,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.35f)),
+        modifier = modifier
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(accentColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = stepNumber,
+                        color = accentColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                }
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = accentColor,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = accentColor,
+                    maxLines = 1
+                )
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            FormattedText(
+                text = content,
+                style = MaterialTheme.typography.bodySmall,
+                lineHeight = 18.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+

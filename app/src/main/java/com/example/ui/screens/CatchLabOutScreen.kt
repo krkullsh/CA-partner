@@ -21,8 +21,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -32,6 +33,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -133,6 +135,59 @@ fun CatchLabOutScreen(viewModel: CaLabViewModel) {
             }
         }
 
+        // Action row: Generate New Trick Case (AI)
+        item {
+            Button(
+                onClick = { viewModel.generateNewAiTrickScenario() },
+                enabled = !state.isGeneratingAiScenario,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("generate_ai_trick_button"),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                if (state.isGeneratingAiScenario) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Drafting subtle traps with Gemini AI...", fontSize = 12.sp)
+                } else {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Generate New Trick Case (AI)", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        if (state.aiErrorMessage != null) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = ErrorRed.copy(alpha = 0.15f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = state.aiErrorMessage!!,
+                            color = ErrorRed,
+                            fontSize = 12.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { viewModel.dismissCatchAiError() }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = ErrorRed, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+        }
+
         // Scenario Card
         if (currentScenario != null) {
             item {
@@ -211,7 +266,7 @@ fun CatchLabOutScreen(viewModel: CaLabViewModel) {
                                 },
                                 enabled = state.activeScenarioIndex > 0
                             ) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = "Previous")
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous")
                             }
 
                             Text(
@@ -228,7 +283,7 @@ fun CatchLabOutScreen(viewModel: CaLabViewModel) {
                                 },
                                 enabled = state.activeScenarioIndex < scenarios.size - 1
                             ) {
-                                Icon(Icons.Default.ArrowForward, contentDescription = "Next")
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next")
                             }
                         }
                     }

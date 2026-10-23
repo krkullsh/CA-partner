@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -71,6 +72,7 @@ import com.example.data.model.LabVerdict
 import com.example.data.model.MessageSender
 import com.example.data.model.PaperCode
 import com.example.data.model.SyllabusTopic
+import com.example.ui.components.FormattedText
 import com.example.ui.theme.Amber500
 import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.Sky500
@@ -301,62 +303,222 @@ fun TeachLabScreen(viewModel: CaLabViewModel) {
 
     // Topic Selection Dialog
     if (showTopicPicker) {
+        var pickerSearchQuery by remember { mutableStateOf("") }
+        var selectedPickerModule by remember { mutableStateOf("All") }
+
         Dialog(onDismissRequest = { showTopicPicker = false }) {
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(8.dp)
+                    .padding(vertical = 12.dp)
                     .testTag("topic_picker_dialog")
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Pick Syllabus Topic to Teach",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Select Topic to Teach",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = state.selectedPaper.title,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        IconButton(onClick = { showTopicPicker = false }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close")
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(10.dp))
-                    val availableTopics = CaSyllabusData.getTopicsForPaper(state.selectedPaper)
+
+                    // In-dialog search bar
+                    OutlinedTextField(
+                        value = pickerSearchQuery,
+                        onValueChange = { pickerSearchQuery = it },
+                        placeholder = { Text("Search standard, chapter, or topic...", fontSize = 12.sp) },
+                        leadingIcon = {
+                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                        },
+                        trailingIcon = {
+                            if (pickerSearchQuery.isNotEmpty()) {
+                                IconButton(onClick = { pickerSearchQuery = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("picker_search_field")
+                    )
+
+                    val allAvailable = remember(state.selectedPaper) {
+                        CaSyllabusData.getTopicsForPaper(state.selectedPaper)
+                    }
+
+                    val availableModules = remember(allAvailable) {
+                        listOf("All") + allAvailable.map { it.moduleName }.distinct()
+                    }
+
+                    if (availableModules.size > 2) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(availableModules, key = { it }) { mod ->
+                                FilterChip(
+                                    selected = selectedPickerModule == mod,
+                                    onClick = { selectedPickerModule = mod },
+                                    label = { Text(mod, fontSize = 11.sp) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    val filteredTopics = allAvailable.filter { topic ->
+                        val matchesQuery = pickerSearchQuery.isBlank() ||
+                            topic.topicName.contains(pickerSearchQuery, ignoreCase = true) ||
+                            topic.chapter.contains(pickerSearchQuery, ignoreCase = true) ||
+                            topic.moduleName.contains(pickerSearchQuery, ignoreCase = true)
+
+                        val matchesModule = selectedPickerModule == "All" || topic.moduleName == selectedPickerModule
+
+                        matchesQuery && matchesModule
+                    }
+
+                    val groupedTopics = filteredTopics.groupBy { it.moduleName }
+
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(320.dp)
+                            .height(340.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(availableTopics, key = { it.id }) { t ->
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp)
-                                    .clickable {
-                                        viewModel.selectTeachTopic(t)
-                                        showTopicPicker = false
-                                    },
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (state.selectedTopic?.id == t.id)
-                                        MaterialTheme.colorScheme.primaryContainer
-                                    else MaterialTheme.colorScheme.surface
-                                )
-                            ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
+                        if (filteredTopics.isEmpty()) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(24.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
                                     Text(
-                                        text = t.topicName,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        text = t.chapter,
-                                        style = MaterialTheme.typography.labelSmall,
+                                        text = "No topics matching \"$pickerSearchQuery\"",
+                                        style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
                         }
+
+                        groupedTopics.forEach { (moduleName, topicsInGroup) ->
+                            item {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 4.dp, bottom = 2.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = moduleName,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = "${topicsInGroup.size} topics",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+
+                            items(topicsInGroup, key = { it.id }) { t ->
+                                val isSelected = state.selectedTopic?.id == t.id
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.selectTeachTopic(t)
+                                            showTopicPicker = false
+                                        }
+                                        .testTag("picker_topic_${t.id}"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isSelected)
+                                            MaterialTheme.colorScheme.primaryContainer
+                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                text = t.topicName,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (t.blueprint != null) {
+                                                Surface(
+                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    modifier = Modifier.padding(start = 4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "Blueprint",
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Text(
+                                            text = "${t.chapter} • ${t.keyProvisions.firstOrNull()?.take(45) ?: ""}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
                     Button(
                         onClick = { showTopicPicker = false },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp)
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Close")
                     }
@@ -409,10 +571,11 @@ fun MessageBubble(
             modifier = Modifier.widthIn(max = 300.dp)
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text(
+                FormattedText(
                     text = message.text,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 20.sp
                 )
 
                 if (message.isVerdict && message.verdict != null) {

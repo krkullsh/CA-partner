@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -43,7 +44,9 @@ data class CatchLabState(
     val activeScenarioIndex: Int = 0,
     val userSpottingInput: String = "",
     val isRevealed: Boolean = false,
-    val scoreFeedback: String? = null
+    val scoreFeedback: String? = null,
+    val isGeneratingAiScenario: Boolean = false,
+    val aiErrorMessage: String? = null
 )
 
 data class AskLabState(
@@ -52,7 +55,8 @@ data class AskLabState(
     val selectedDepth: ExplanationDepth = ExplanationDepth.DEPTH_1,
     val customQuery: String = "",
     val displayedContent: String = "",
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val showBookmarkedOnly: Boolean = false
 )
 
 data class SpotDifferenceState(
@@ -60,7 +64,10 @@ data class SpotDifferenceState(
     val searchQuery: String = "",
     val selectedDifference: ConceptDifference? = CuratedDifferences.differences.firstOrNull(),
     val isSelfQuizMode: Boolean = false,
-    val revealedColumns: Set<Int> = emptySet()
+    val revealedColumns: Set<Int> = emptySet(),
+    val showBookmarkedOnly: Boolean = false,
+    val isGeneratingAiDifference: Boolean = false,
+    val aiErrorMessage: String? = null
 )
 
 data class VerdictsDashboardState(
@@ -107,6 +114,16 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
     // On-demand Verdicts Dashboard state (no continuous background Room polling)
     private val _verdictsDashboard = MutableStateFlow(VerdictsDashboardState())
     val verdictsDashboard: StateFlow<VerdictsDashboardState> = _verdictsDashboard.asStateFlow()
+
+    val bookmarkedIds: StateFlow<Set<String>> = repository.getBookmarks()
+        .map { list -> list.map { it.id }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    fun toggleBookmark(id: String, type: String, title: String, paperName: String) {
+        viewModelScope.launch {
+            repository.toggleBookmark(id, type, title, paperName)
+        }
+    }
 
     init {
         // Initialize Teach Lab with welcome greeting
@@ -257,7 +274,14 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
                     .filter { it.sender == MessageSender.USER }
                     .joinToString("\n") { it.text }
 
-                val verdict = OfflineLabEngine.generateVerdict(topic, allUserWords)
+                val verdict = if (!_isOffline.value && repository.hasValidGeminiKey()) {
+                    val aiResult = repository.generateAiVerdict(topic, allUserWords)
+                    aiResult.getOrElse {
+                        OfflineLabEngine.generateVerdict(topic, allUserWords)
+                    }
+                } else {
+                    OfflineLabEngine.generateVerdict(topic, allUserWords)
+                }
 
                 // Save to Room DB
                 repository.saveVerdict(verdict)
@@ -474,5 +498,80 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
         val current = _diffState.value.revealedColumns.toMutableSet()
         current.add(index)
         _diffState.value = _diffState.value.copy(revealedColumns = current)
+    }
+
+    // Catch Lab AI generation
+    fun generateNewAiTrickScenario() {
+        val paper = _catchState.value.selectedPaper
+        val topics = repository.getTopicsForPaper(paper)
+        val targetTopic = topics.randomOrNull()?.topicName ?: paper.title
+        _catchState.value = _catchState.value.copy(
+            isGeneratingAiScenario = true,
+            aiErrorMessage = null
+        )
+
+        viewModelScope.launch {
+            val result = repository.generateTrickScenario(paper, targetTopic)
+            result.onSuccess { newScenario ->
+                val updated = listOf(newScenario) + _catchState.value.scenarios
+                _catchState.value = _catchState.value.copy(
+                    scenarios = updated,
+                    activeScenarioIndex = 0,
+                    userSpottingInput = "",
+                    isRevealed = false,
+                    scoreFeedback = null,
+                    isGeneratingAiScenario = false
+                )
+            }.onFailure { err ->
+                _catchState.value = _catchState.value.copy(
+                    isGeneratingAiScenario = false,
+                    aiErrorMessage = err.message ?: "Failed to generate AI scenario. Ensure Cloud AI is enabled."
+                )
+            }
+        }
+    }
+
+    fun dismissCatchAiError() {
+        _catchState.value = _catchState.value.copy(aiErrorMessage = null)
+    }
+
+    // Ask Lab Bookmark Filter
+    fun toggleAskBookmarkedOnly() {
+        _askState.value = _askState.value.copy(showBookmarkedOnly = !_askState.value.showBookmarkedOnly)
+    }
+
+    // Spot Difference Bookmark & AI Generator
+    fun toggleDiffBookmarkedOnly() {
+        _diffState.value = _diffState.value.copy(showBookmarkedOnly = !_diffState.value.showBookmarkedOnly)
+    }
+
+    fun generateAiDifference(query: String) {
+        val cleanQuery = query.trim()
+        if (cleanQuery.isBlank()) return
+
+        _diffState.value = _diffState.value.copy(
+            isGeneratingAiDifference = true,
+            aiErrorMessage = null
+        )
+
+        viewModelScope.launch {
+            val result = repository.generateConceptDifference(cleanQuery, _diffState.value.selectedPaper)
+            result.onSuccess { newDiff ->
+                _diffState.value = _diffState.value.copy(
+                    selectedDifference = newDiff,
+                    revealedColumns = emptySet(),
+                    isGeneratingAiDifference = false
+                )
+            }.onFailure { err ->
+                _diffState.value = _diffState.value.copy(
+                    isGeneratingAiDifference = false,
+                    aiErrorMessage = err.message ?: "Could not compare concepts for '$cleanQuery'."
+                )
+            }
+        }
+    }
+
+    fun dismissDiffAiError() {
+        _diffState.value = _diffState.value.copy(aiErrorMessage = null)
     }
 }

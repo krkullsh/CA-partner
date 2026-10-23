@@ -129,4 +129,48 @@ class StudyRepository(
 
         return GeminiApiClient.generateContent(prompt, key, history)
     }
+
+    suspend fun generateAiVerdict(
+        topic: SyllabusTopic,
+        conversationText: String
+    ): Result<LabVerdict> {
+        if (isOfflineMode) {
+            return Result.failure(IllegalStateException("Offline mode active"))
+        }
+
+        val key = GeminiApiClient.getApiKey(customApiKey)
+        if (key.isBlank()) {
+            return Result.failure(IllegalStateException("No Gemini API key available"))
+        }
+
+        return GeminiApiClient.generateJsonVerdict(topic, conversationText, key)
+    }
+
+    suspend fun generateTrickScenario(paper: PaperCode, topicName: String): Result<CatchLabScenario> {
+        val topic = CaSyllabusData.topics.firstOrNull { it.topicName.equals(topicName, ignoreCase = true) }
+            ?: CaSyllabusData.getTopicsForPaper(paper).firstOrNull()
+            ?: CaSyllabusData.topics.first()
+
+        if (!isOfflineMode && hasValidGeminiKey()) {
+            val key = GeminiApiClient.getApiKey(customApiKey)
+            val aiResult = GeminiApiClient.generateAiTrickScenario(paper, topicName, key)
+            if (aiResult.isSuccess) {
+                return aiResult
+            }
+        }
+        // Seamless fallback ensures student is never blocked by network timeouts
+        return Result.success(OfflineLabEngine.generateOfflineTrickScenario(topic))
+    }
+
+    suspend fun generateConceptDifference(query: String, paper: PaperCode?): Result<ConceptDifference> {
+        if (!isOfflineMode && hasValidGeminiKey()) {
+            val key = GeminiApiClient.getApiKey(customApiKey)
+            val aiResult = GeminiApiClient.generateAiConceptDifference(query, paper, key)
+            if (aiResult.isSuccess) {
+                return aiResult
+            }
+        }
+        // Seamless fallback ensures student gets an instant structured comparison
+        return Result.success(OfflineLabEngine.generateOfflineConceptDifference(query, paper))
+    }
 }

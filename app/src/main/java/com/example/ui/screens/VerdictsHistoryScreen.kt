@@ -200,7 +200,7 @@ fun VerdictsHistoryScreen(viewModel: CaLabViewModel) {
                 }
             }
         } else {
-            items(verdicts, key = { it.topicName + it.masteryScore + it.paperName }) { verdict ->
+            items(verdicts, key = { it.id }) { verdict ->
                 VerdictHistoryCard(verdict = verdict)
             }
         }

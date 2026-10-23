@@ -126,14 +126,27 @@ Section 17(5) is the government's blocklist: Even if you are a registered busine
             depth2 = """
 🛑 **Section 17(5) Rapid Revision Matrix:**
 
-| Clause | Item / Service | ITC Status | Permitted Exception |
-| :--- | :--- | :--- | :--- |
-| **17(5)(a)** | Motor vehicles for transport of persons (<= 13 seats) | **BLOCKED** | Taxable supply of vehicles, passenger transport, flying/driving training schools |
-| **17(5)(aa)** | Vessels and Aircraft | **BLOCKED** | Commercial transport of goods/passengers, navigation training |
-| **17(5)(b)(i)** | Food, beverages, outdoor catering, cosmetic surgery | **BLOCKED** | Statutory obligation by law, or used for outward taxable supply of same category |
-| **17(5)(b)(ii)**| Club, health and fitness centre membership | **BLOCKED** | No exceptions |
-| **17(5)(c)** | Works contract for construction of immovable property | **BLOCKED** | Plant and Machinery, or used for further supply of works contract |
-| **17(5)(h)** | Lost, stolen, destroyed, written off, gifts / samples | **BLOCKED** | Nil (Must reverse input tax credit) |
+• **Clause 17(5)(a) - Motor Vehicles (<= 13 seats):**
+  - **ITC Status:** **BLOCKED**
+  - **Permitted Exceptions:** Taxable supply of vehicles, passenger transport, or driving training schools.
+
+• **Clause 17(5)(aa) - Vessels & Aircraft:**
+  - **ITC Status:** **BLOCKED**
+  - **Permitted Exceptions:** Commercial goods/passenger transport or navigation training.
+
+• **Clause 17(5)(b)(i) - Food, Outdoor Catering & Health Services:**
+  - **ITC Status:** **BLOCKED**
+  - **Permitted Exceptions:** Statutory obligation by law, or used for outward taxable supply in same category.
+
+• **Clause 17(5)(b)(ii) - Club, Health & Fitness Memberships:**
+  - **ITC Status:** **BLOCKED** (No statutory exceptions).
+
+• **Clause 17(5)(c) - Works Contract for Immovable Property:**
+  - **ITC Status:** **BLOCKED**
+  - **Permitted Exceptions:** Plant and machinery, or used for further supply of works contract.
+
+• **Clause 17(5)(h) - Lost, Stolen, Destroyed Goods or Gifts/Free Samples:**
+  - **ITC Status:** **BLOCKED** (Mandatory input tax credit reversal).
             """.trimIndent(),
             depth3 = """
 🏛️ **ICAI Exam Answer Format:**

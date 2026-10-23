@@ -13,9 +13,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
@@ -114,33 +114,22 @@ fun CaLabApp(viewModel: CaLabViewModel = viewModel()) {
                     }
                 },
                 actions = {
-                    // Online / Offline Status Badge
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isOffline) Amber500.copy(alpha = 0.15f) else SuccessGreen.copy(alpha = 0.15f),
+                    // Compact Status Dot indicator (Amber = Offline, Green = Cloud AI)
+                    Box(
                         modifier = Modifier
-                            .clickable { viewModel.toggleOfflineMode() }
                             .padding(end = 4.dp)
-                            .testTag("offline_status_badge")
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .clickable { viewModel.toggleSettingsDialog(true) }
+                            .testTag("offline_status_dot"),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isOffline) Icons.Default.WifiOff else Icons.Default.Wifi,
-                                contentDescription = null,
-                                tint = if (isOffline) Amber500 else SuccessGreen,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (isOffline) "Offline" else "Cloud AI",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isOffline) Amber500 else SuccessGreen
-                            )
-                        }
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(if (isOffline) Amber500 else SuccessGreen)
+                        )
                     }
 
                     IconButton(
@@ -166,7 +155,7 @@ fun CaLabApp(viewModel: CaLabViewModel = viewModel()) {
                         LabMode.TEACH_LAB -> Icons.Default.School
                         LabMode.CATCH_LAB_OUT -> Icons.Default.BugReport
                         LabMode.ASK_LAB -> Icons.Default.Psychology
-                        LabMode.SPOT_DIFFERENCE -> Icons.Default.CompareArrows
+                        LabMode.SPOT_DIFFERENCE -> Icons.AutoMirrored.Filled.CompareArrows
                         LabMode.VERDICTS -> Icons.Default.Assessment
                     }
 

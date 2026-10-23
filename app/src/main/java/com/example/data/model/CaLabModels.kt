@@ -50,13 +50,21 @@ enum class MessageSender {
 }
 
 data class LabVerdict(
+    val id: Long = 0,
     val masteryScore: Int,
     val paperName: String,
     val topicName: String,
     val whatYouNailed: List<String>,
     val whatSlipped: List<String>,
     val icaiExaminerTip: String,
-    val nextAction: String
+    val nextAction: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+data class StandardBlueprint(
+    val scope: String,
+    val recognitionAndMeasurement: String,
+    val disclosure: String
 )
 
 data class SyllabusTopic(
@@ -64,6 +72,8 @@ data class SyllabusTopic(
     val paper: PaperCode,
     val chapter: String,
     val topicName: String,
+    val moduleName: String = "Module 1",
+    val blueprint: StandardBlueprint? = null,
     val keyProvisions: List<String>,
     val commonExaminerPitfalls: String
 )
