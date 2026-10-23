@@ -12,47 +12,51 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Amber500,
-    onPrimary = Slate950,
-    primaryContainer = Amber700,
-    onPrimaryContainer = Amber100,
-    secondary = Sky500,
-    onSecondary = Slate950,
-    secondaryContainer = Slate800,
-    onSecondaryContainer = Sky500,
-    background = Slate950,
-    onBackground = Slate50,
-    surface = Slate900,
-    onSurface = Slate50,
-    surfaceVariant = Slate800,
-    onSurfaceVariant = Slate200,
-    error = ErrorRed,
-    onError = Color.White
+    primary = WaTeal,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF005C4B),
+    onPrimaryContainer = Color(0xFFD9FDD3),
+    secondary = Color(0xFF34B7F1),
+    onSecondary = Color.Black,
+    secondaryContainer = WaDarkSurfaceVariant,
+    onSecondaryContainer = WaDarkText,
+    background = WaDarkBg,
+    onBackground = WaDarkText,
+    surface = WaDarkSurface,
+    onSurface = WaDarkText,
+    surfaceVariant = WaDarkSurfaceVariant,
+    onSurfaceVariant = WaDarkSubtext,
+    error = Color(0xFFF8D7DA),
+    onError = Color(0xFF842029),
+    errorContainer = Color(0xFF842029),
+    onErrorContainer = Color(0xFFF8D7DA)
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Amber600,
+    primary = FbBlue,
     onPrimary = Color.White,
-    primaryContainer = Amber100,
-    onPrimaryContainer = Amber700,
-    secondary = Sky600,
+    primaryContainer = Color(0xFFE7F3FF),
+    onPrimaryContainer = Color(0xFF0D47A1),
+    secondary = Sky500,
     onSecondary = Color.White,
-    secondaryContainer = Slate100,
-    onSecondaryContainer = Slate800,
-    background = Slate50,
-    onBackground = Slate900,
-    surface = Color.White,
-    onSurface = Slate900,
-    surfaceVariant = Slate100,
-    onSurfaceVariant = Slate700,
+    secondaryContainer = FbLightSurfaceVariant,
+    onSecondaryContainer = FbLightText,
+    background = FbLightBg,
+    onBackground = FbLightText,
+    surface = FbLightSurface,
+    onSurface = FbLightText,
+    surfaceVariant = FbLightSurfaceVariant,
+    onSurfaceVariant = FbLightSubtext,
     error = ErrorRed,
-    onError = Color.White
+    onError = Color.White,
+    errorContainer = ErrorRedContainer,
+    onErrorContainer = ErrorRed
 )
 
 @Composable
 fun MyApplicationTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = false, // Set false by default to maintain CA-Lab professional palette
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

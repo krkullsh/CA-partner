@@ -74,10 +74,18 @@ import com.example.data.model.MessageSender
 import com.example.data.model.PaperCode
 import com.example.data.model.SyllabusTopic
 import com.example.ui.components.FormattedText
+import androidx.compose.foundation.isSystemInDarkTheme
 import com.example.ui.theme.Amber500
 import com.example.ui.theme.ErrorRed
+import com.example.ui.theme.FbLightText
 import com.example.ui.theme.Sky500
 import com.example.ui.theme.SuccessGreen
+import com.example.ui.theme.WaDarkText
+import com.example.ui.theme.WaLabBubbleDark
+import com.example.ui.theme.WaLabBubbleLight
+import com.example.ui.theme.WaTeal
+import com.example.ui.theme.WaUserBubbleDark
+import com.example.ui.theme.WaUserBubbleLight
 import com.example.ui.viewmodel.CaLabViewModel
 
 @Composable
@@ -583,6 +591,19 @@ fun MessageBubble(
     onShowVerdict: () -> Unit
 ) {
     val isUser = message.sender == MessageSender.USER
+    val isDark = isSystemInDarkTheme()
+
+    val bubbleColor = if (isUser) {
+        if (isDark) WaUserBubbleDark else WaUserBubbleLight
+    } else {
+        if (isDark) WaLabBubbleDark else WaLabBubbleLight
+    }
+
+    val textColor = if (isUser) {
+        if (isDark) WaDarkText else FbLightText
+    } else {
+        if (isDark) WaDarkText else FbLightText
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -593,10 +614,10 @@ fun MessageBubble(
                 modifier = Modifier
                     .size(32.dp)
                     .clip(CircleShape)
-                    .background(Amber500),
+                    .background(WaTeal),
                 contentAlignment = Alignment.Center
             ) {
-                Text("Lab", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                Text("Lab", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
             Spacer(modifier = Modifier.width(8.dp))
         }
@@ -608,14 +629,15 @@ fun MessageBubble(
                 bottomStart = if (isUser) 16.dp else 4.dp,
                 bottomEnd = if (isUser) 4.dp else 16.dp
             ),
-            color = if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+            color = bubbleColor,
+            shadowElevation = 1.dp,
             modifier = Modifier.widthIn(max = 300.dp)
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
                 FormattedText(
                     text = message.text,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = textColor,
                     lineHeight = 20.sp
                 )
 
@@ -624,6 +646,7 @@ fun MessageBubble(
                     Button(
                         onClick = onShowVerdict,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(16.dp))
