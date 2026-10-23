@@ -118,13 +118,32 @@ data class ConceptDifference(
     val conceptA: String,
     val conceptB: String,
     val comparisonPoints: List<ComparisonRow>,
-    val memoryHook: String
+    val memoryHook: String,
+    val priorityTier: PriorityTier = PriorityTier.TIER_1,
+    val pastExamFrequency: String = "High Exam Frequency",
+    val examinerTrapNote: String = ""
 )
 
 data class ComparisonRow(
     val basisOfDifference: String,
     val conceptAValue: String,
     val conceptBValue: String
+)
+
+data class StatutoryMatrixRow(
+    val sectionOrClause: String,
+    val provisionName: String,
+    val thresholdOrLimit: String,
+    val approvalOrRate: String,
+    val penaltyOrException: String
+)
+
+data class StatutoryCheatMatrix(
+    val id: String,
+    val paper: PaperCode,
+    val title: String,
+    val columnHeaders: List<String>,
+    val rows: List<StatutoryMatrixRow>
 )
 
 data class DepthExplanation(

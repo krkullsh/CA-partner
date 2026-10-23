@@ -246,10 +246,27 @@ class StudyRepository(
             val key = GeminiApiClient.getApiKey(customApiKey)
             val aiResult = GeminiApiClient.generateAiConceptDifference(query, paper, key)
             if (aiResult.isSuccess) {
+                val diff = aiResult.getOrThrow()
+                saveCustomDifference(diff)
                 return aiResult
             }
         }
         // Seamless fallback ensures student gets an instant structured comparison
-        return Result.success(OfflineLabEngine.generateOfflineConceptDifference(query, paper))
+        val offlineDiff = OfflineLabEngine.generateOfflineConceptDifference(query, paper)
+        saveCustomDifference(offlineDiff)
+        return Result.success(offlineDiff)
+    }
+
+    // Database: Custom Differences Persistence
+    suspend fun saveCustomDifference(diff: ConceptDifference) {
+        database.studyDao().insertCustomDifference(
+            com.example.data.local.CustomDifferenceEntity.fromDomain(diff)
+        )
+    }
+
+    fun getCustomDifferences(): Flow<List<ConceptDifference>> {
+        return database.studyDao().getAllCustomDifferences().map { list ->
+            list.map { it.toDomain() }
+        }
     }
 }

@@ -101,6 +101,75 @@ data class ErrorLogEntity(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "custom_differences")
+data class CustomDifferenceEntity(
+    @PrimaryKey val id: String,
+    val paperName: String,
+    val title: String,
+    val conceptA: String,
+    val conceptB: String,
+    val rowsJson: String,
+    val memoryHook: String,
+    val examinerTrapNote: String,
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    fun toDomain(): com.example.data.model.ConceptDifference {
+        val rowsList = mutableListOf<com.example.data.model.ComparisonRow>()
+        try {
+            val arr = org.json.JSONArray(rowsJson)
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                rowsList.add(
+                    com.example.data.model.ComparisonRow(
+                        basisOfDifference = obj.optString("basisOfDifference", "Point ${i + 1}"),
+                        conceptAValue = obj.optString("conceptAValue", "-"),
+                        conceptBValue = obj.optString("conceptBValue", "-")
+                    )
+                )
+            }
+        } catch (_: Exception) {}
+
+        val paper = com.example.data.model.PaperCode.fromCode(paperName)
+
+        return com.example.data.model.ConceptDifference(
+            id = id,
+            paper = paper,
+            title = title,
+            conceptA = conceptA,
+            conceptB = conceptB,
+            comparisonPoints = if (rowsList.isNotEmpty()) rowsList else listOf(
+                com.example.data.model.ComparisonRow("Comparison", "Check ICAI Material", "Check ICAI Material")
+            ),
+            memoryHook = memoryHook,
+            examinerTrapNote = examinerTrapNote
+        )
+    }
+
+    companion object {
+        fun fromDomain(diff: com.example.data.model.ConceptDifference): CustomDifferenceEntity {
+            val arr = org.json.JSONArray()
+            diff.comparisonPoints.forEach { row ->
+                val obj = org.json.JSONObject()
+                obj.put("basisOfDifference", row.basisOfDifference)
+                obj.put("conceptAValue", row.conceptAValue)
+                obj.put("conceptBValue", row.conceptBValue)
+                arr.put(obj)
+            }
+
+            return CustomDifferenceEntity(
+                id = diff.id,
+                paperName = diff.paper.code,
+                title = diff.title,
+                conceptA = diff.conceptA,
+                conceptB = diff.conceptB,
+                rowsJson = arr.toString(),
+                memoryHook = diff.memoryHook,
+                examinerTrapNote = diff.examinerTrapNote
+            )
+        }
+    }
+}
+
 @Dao
 interface StudyDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -170,9 +239,19 @@ interface StudyDao {
 
     @Query("DELETE FROM error_log WHERE id = :id")
     suspend fun deleteErrorLog(id: Long)
+
+    // Custom Differences tracking
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCustomDifference(diff: CustomDifferenceEntity)
+
+    @Query("SELECT * FROM custom_differences ORDER BY createdAt DESC")
+    fun getAllCustomDifferences(): Flow<List<CustomDifferenceEntity>>
+
+    @Query("SELECT * FROM custom_differences ORDER BY createdAt DESC")
+    suspend fun getCustomDifferencesList(): List<CustomDifferenceEntity>
 }
 
-@Database(entities = [VerdictEntity::class, BookmarkEntity::class, TopicProgressEntity::class, ErrorLogEntity::class], version = 3, exportSchema = false)
+@Database(entities = [VerdictEntity::class, BookmarkEntity::class, TopicProgressEntity::class, ErrorLogEntity::class, CustomDifferenceEntity::class], version = 4, exportSchema = false)
 abstract class CaLabDatabase : RoomDatabase() {
     abstract fun studyDao(): StudyDao
 

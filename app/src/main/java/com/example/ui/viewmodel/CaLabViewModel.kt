@@ -144,6 +144,9 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
     val errorLogs: StateFlow<List<com.example.data.local.ErrorLogEntity>> = repository.getErrorLogs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val customDifferences: StateFlow<List<ConceptDifference>> = repository.getCustomDifferences()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     fun incrementWrittenSolved(topicId: String) {
         viewModelScope.launch {
             repository.recordWrittenPractice(topicId)
@@ -745,6 +748,30 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
                 _diffState.value = _diffState.value.copy(
                     isGeneratingAiDifference = false,
                     aiErrorMessage = err.message ?: "Could not compare concepts for '$cleanQuery'."
+                )
+            }
+        }
+    }
+
+    fun generateAiTopicComparison(topicA: SyllabusTopic, topicB: SyllabusTopic) {
+        val paperToUse = topicA.paper
+        _diffState.value = _diffState.value.copy(
+            selectedPaper = paperToUse,
+            isGeneratingAiDifference = true,
+            aiErrorMessage = null
+        )
+        viewModelScope.launch {
+            val result = repository.generateConceptDifference("${topicA.topicName} vs ${topicB.topicName}", paperToUse)
+            result.onSuccess { newDiff ->
+                _diffState.value = _diffState.value.copy(
+                    selectedDifference = newDiff,
+                    revealedColumns = emptySet(),
+                    isGeneratingAiDifference = false
+                )
+            }.onFailure { err ->
+                _diffState.value = _diffState.value.copy(
+                    isGeneratingAiDifference = false,
+                    aiErrorMessage = err.message ?: "Could not compare '${topicA.topicName}' vs '${topicB.topicName}'."
                 )
             }
         }
