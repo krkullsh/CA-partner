@@ -158,6 +158,35 @@ class StudyRepository(
         }
     }
 
+    // Database: Error Log
+    suspend fun logError(
+        paperName: String,
+        topicId: String,
+        topicName: String,
+        priorityTierName: String,
+        questionOrConcept: String,
+        userMistake: String,
+        correctRule: String
+    ): Long {
+        return database.studyDao().insertErrorLog(
+            com.example.data.local.ErrorLogEntity(
+                paperName = paperName,
+                topicId = topicId,
+                topicName = topicName,
+                priorityTierName = priorityTierName,
+                questionOrConcept = questionOrConcept,
+                userMistake = userMistake,
+                correctRule = correctRule
+            )
+        )
+    }
+
+    fun getErrorLogs(): Flow<List<com.example.data.local.ErrorLogEntity>> = database.studyDao().getAllErrorLogs()
+
+    suspend fun resolveErrorLog(id: Long) {
+        database.studyDao().deleteErrorLog(id)
+    }
+
     // Strategy Blueprint Markdown Loader
     fun getStrategyBlueprintMarkdown(paper: PaperCode): String {
         return com.example.data.curriculum.StrategyBlueprintReader.getBlueprintMarkdown(context, paper)

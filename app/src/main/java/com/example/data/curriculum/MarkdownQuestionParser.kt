@@ -28,7 +28,13 @@ object MarkdownQuestionParser {
 
         val assetName = paperAssetFileMap[paper]
         val parsedFromAsset = if (assetName != null) {
-            parseFromAsset(context, assetName, paper)
+            try {
+                kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    parseFromAsset(context, assetName, paper)
+                }
+            } catch (_: Exception) {
+                emptyList()
+            }
         } else {
             emptyList()
         }

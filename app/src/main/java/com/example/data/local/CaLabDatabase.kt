@@ -88,6 +88,19 @@ data class TopicProgressEntity(
     val lastRevisedAt: Long = 0L
 )
 
+@Entity(tableName = "error_log")
+data class ErrorLogEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val paperName: String,
+    val topicId: String,
+    val topicName: String,
+    val priorityTierName: String,
+    val questionOrConcept: String,
+    val userMistake: String,
+    val correctRule: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 @Dao
 interface StudyDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -144,9 +157,22 @@ interface StudyDao {
 
     @Query("UPDATE topic_progress SET mcqAttempted = mcqAttempted + :attempted, mcqCorrect = mcqCorrect + :correct, lastRevisedAt = :timestamp WHERE topicId = :topicId")
     suspend fun recordMcqResult(topicId: String, attempted: Int, correct: Int, timestamp: Long = System.currentTimeMillis())
+
+    // Error Log tracking
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertErrorLog(errorLog: ErrorLogEntity): Long
+
+    @Query("SELECT * FROM error_log ORDER BY timestamp DESC")
+    fun getAllErrorLogs(): Flow<List<ErrorLogEntity>>
+
+    @Query("SELECT * FROM error_log ORDER BY timestamp DESC")
+    suspend fun getErrorLogsList(): List<ErrorLogEntity>
+
+    @Query("DELETE FROM error_log WHERE id = :id")
+    suspend fun deleteErrorLog(id: Long)
 }
 
-@Database(entities = [VerdictEntity::class, BookmarkEntity::class, TopicProgressEntity::class], version = 2, exportSchema = false)
+@Database(entities = [VerdictEntity::class, BookmarkEntity::class, TopicProgressEntity::class, ErrorLogEntity::class], version = 3, exportSchema = false)
 abstract class CaLabDatabase : RoomDatabase() {
     abstract fun studyDao(): StudyDao
 

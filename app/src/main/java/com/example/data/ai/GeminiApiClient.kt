@@ -14,7 +14,9 @@ import com.example.data.model.ComparisonRow
 import com.example.data.model.ConceptDifference
 import com.example.data.model.CatchLabScenario
 import com.example.data.model.LabVerdict
+import com.example.data.model.McqQuestion
 import com.example.data.model.PaperCode
+import com.example.data.model.PriorityTier
 import com.example.data.model.SubtleError
 import com.example.data.model.SyllabusTopic
 import java.net.SocketTimeoutException
@@ -518,6 +520,123 @@ Output strictly a JSON object with this schema:
             Result.failure(Exception("Comparison timed out. Switching to offline engine..."))
         } catch (e: Exception) {
             Log.e(TAG, "Exception creating AI concept difference", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun generateAiMcqs(
+        paper: PaperCode,
+        topicName: String,
+        apiKey: String
+    ): Result<List<McqQuestion>> = withContext(Dispatchers.IO) {
+        try {
+            if (apiKey.isBlank()) {
+                return@withContext Result.failure(IllegalStateException("No Gemini API key available"))
+            }
+
+            val prompt = """
+You are acting as an ICAI CA Intermediate Exam Item Writer for Paper ${paper.code}: ${paper.title}.
+Generate 3 realistic ICAI 2-mark MCQs on the topic: "$topicName".
+Include 1 Integrated Case Scenario MCQ and 2 standalone MCQs with strict options A, B, C, D.
+Output strictly a JSON array of objects with this schema:
+[
+  {
+    "id": "ai_mcq_${System.currentTimeMillis()}_1",
+    "topicId": "custom_topic",
+    "topicName": "$topicName",
+    "caseScenarioText": "<Optional case paragraph for scenario MCQ, or null for standalone>",
+    "questionStem": "<Clear stem asking for 2-mark calculation or legal provision application>",
+    "options": [
+      "A. Option 1",
+      "B. Option 2",
+      "C. Option 3",
+      "D. Option 4"
+    ],
+    "correctOptionIndex": <0, 1, 2, or 3>,
+    "explanation": "<Step-by-step working note or legal explanation for the correct option>",
+    "icaiProvisionRef": "<Exact Section, Accounting Standard, or SA reference>"
+  }
+]
+""".trimIndent()
+
+            val requestBodyJson = JSONObject()
+            val systemInstruction = JSONObject().apply {
+                put("parts", JSONArray().put(JSONObject().put("text", "You are an expert ICAI item writer. Always output strictly valid JSON array of MCQs conforming to the requested schema.")))
+            }
+            requestBodyJson.put("system_instruction", systemInstruction)
+
+            val contentsArray = JSONArray()
+            val currentTurn = JSONObject().apply {
+                put("role", "user")
+                put("parts", JSONArray().put(JSONObject().put("text", prompt)))
+            }
+            contentsArray.put(currentTurn)
+            requestBodyJson.put("contents", contentsArray)
+
+            val genConfig = JSONObject().apply {
+                put("temperature", 0.3)
+                put("maxOutputTokens", 1200)
+                put("responseMimeType", "application/json")
+            }
+            requestBodyJson.put("generationConfig", genConfig)
+
+            val urlWithKey = "$BASE_URL?key=$apiKey"
+            val body = requestBodyJson.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder().url(urlWithKey).post(body).build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string().orEmpty()
+                    Log.e(TAG, "Gemini API HTTP ${response.code}: $errorBody")
+                    return@withContext Result.failure(Exception("Gemini API error (${response.code})"))
+                }
+
+                val responseStr = response.body?.string() ?: ""
+                val json = JSONObject(responseStr)
+                val candidates = json.optJSONArray("candidates")
+                if (candidates != null && candidates.length() > 0) {
+                    val candidate = candidates.getJSONObject(0)
+                    val contentObj = candidate.optJSONObject("content")
+                    val parts = contentObj?.optJSONArray("parts")
+                    if (parts != null && parts.length() > 0) {
+                        val rawText = parts.getJSONObject(0).optString("text")
+                        val text = cleanJsonString(rawText)
+
+                        val mcqsList = mutableListOf<McqQuestion>()
+                        val jsonArr = if (text.startsWith("[")) JSONArray(text) else JSONArray().put(JSONObject(text))
+
+                        for (i in 0 until jsonArr.length()) {
+                            val obj = jsonArr.getJSONObject(i)
+                            val optionsArr = obj.optJSONArray("options") ?: JSONArray()
+                            val opts = mutableListOf<String>()
+                            for (j in 0 until optionsArr.length()) {
+                                opts.add(optionsArr.getString(j))
+                            }
+
+                            mcqsList.add(
+                                McqQuestion(
+                                    id = obj.optString("id", "ai_mcq_${System.currentTimeMillis()}_$i"),
+                                    paper = paper,
+                                    topicId = obj.optString("topicId", "custom_topic"),
+                                    topicName = obj.optString("topicName", topicName),
+                                    priorityTier = PriorityTier.TIER_1,
+                                    caseScenarioText = if (obj.has("caseScenarioText") && !obj.isNull("caseScenarioText")) obj.getString("caseScenarioText") else null,
+                                    questionStem = obj.optString("questionStem", "Which of the following is correct?"),
+                                    options = if (opts.size >= 4) opts else listOf("A. Option A", "B. Option B", "C. Option C", "D. Option D"),
+                                    correctOptionIndex = obj.optInt("correctOptionIndex", 0).coerceIn(0, 3),
+                                    explanation = obj.optString("explanation", "Refer to standard ICAI study material for detailed working."),
+                                    icaiProvisionRef = obj.optString("icaiProvisionRef", "ICAI New Scheme Provision")
+                                )
+                            )
+                        }
+
+                        return@withContext Result.success(mcqsList)
+                    }
+                }
+                Result.failure(Exception("Empty response from Gemini"))
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Exception creating AI MCQs", e)
             Result.failure(e)
         }
     }

@@ -1200,6 +1200,11 @@ fun CollapsiblePracticeQuestionsCard(
                     }
                     var isTimerRunning by remember(currentQuestion.id) { mutableStateOf(false) }
 
+                    LaunchedEffect(currentQuestion.id, topic.id) {
+                        isTimerRunning = false
+                        remainingSeconds = currentQuestion.minutesAllowed * 60
+                    }
+
                     LaunchedEffect(isTimerRunning, remainingSeconds) {
                         if (isTimerRunning && remainingSeconds > 0) {
                             delay(1000L)

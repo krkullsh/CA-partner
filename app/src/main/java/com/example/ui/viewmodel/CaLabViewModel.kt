@@ -80,6 +80,17 @@ data class VerdictsDashboardState(
     val isLoading: Boolean = false
 )
 
+data class McqTestState(
+    val selectedPaper: PaperCode = PaperCode.PAPER_1,
+    val questions: List<com.example.data.model.McqQuestion> = emptyList(),
+    val userAnswers: Map<String, Int> = emptyMap(),
+    val isSubmitted: Boolean = false,
+    val scoreCorrect: Int = 0,
+    val totalQuestions: Int = 0,
+    val isGeneratingAi: Boolean = false,
+    val errorMessage: String? = null
+)
+
 class CaLabViewModel(application: Application) : AndroidViewModel(application) {
 
     val repository = StudyRepository(
@@ -114,9 +125,13 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
     private val _diffState = MutableStateFlow(SpotDifferenceState())
     val diffState: StateFlow<SpotDifferenceState> = _diffState.asStateFlow()
 
-    // On-demand Verdicts Dashboard state (no continuous background Room polling)
+    // On-demand Verdicts Dashboard state
     private val _verdictsDashboard = MutableStateFlow(VerdictsDashboardState())
     val verdictsDashboard: StateFlow<VerdictsDashboardState> = _verdictsDashboard.asStateFlow()
+
+    // Diagnostic MCQ Test State
+    private val _mcqTestState = MutableStateFlow(McqTestState())
+    val mcqTestState: StateFlow<McqTestState> = _mcqTestState.asStateFlow()
 
     val bookmarkedIds: StateFlow<Set<String>> = repository.getBookmarks()
         .map { list -> list.map { it.id }.toSet() }
@@ -125,6 +140,9 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
     val topicProgressMap: StateFlow<Map<String, com.example.data.local.TopicProgressEntity>> = repository.getAllTopicProgress()
         .map { list -> list.associateBy { it.topicId } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val errorLogs: StateFlow<List<com.example.data.local.ErrorLogEntity>> = repository.getErrorLogs()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun incrementWrittenSolved(topicId: String) {
         viewModelScope.launch {
@@ -148,6 +166,128 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
         // Initialize Teach Lab with welcome greeting
         resetTeachLabSession(_teachState.value.selectedTopic)
         updateAskLabContent()
+        selectMcqTestPaper(PaperCode.PAPER_1)
+    }
+
+    // -------------------------------------------------------------
+    // DIAGNOSTIC MCQ TEST MODE
+    // -------------------------------------------------------------
+    fun selectMcqTestPaper(paper: PaperCode) {
+        val curated = com.example.data.curriculum.CuratedMcqBank.getMcqsForPaper(paper)
+        _mcqTestState.value = _mcqTestState.value.copy(
+            selectedPaper = paper,
+            questions = curated,
+            userAnswers = emptyMap(),
+            isSubmitted = false,
+            scoreCorrect = 0,
+            totalQuestions = curated.size,
+            isGeneratingAi = false,
+            errorMessage = null
+        )
+    }
+
+    fun selectMcqOption(questionId: String, optionIndex: Int) {
+        if (_mcqTestState.value.isSubmitted) return
+        val current = _mcqTestState.value.userAnswers.toMutableMap()
+        current[questionId] = optionIndex
+        _mcqTestState.value = _mcqTestState.value.copy(userAnswers = current)
+    }
+
+    fun submitMcqTest() {
+        val state = _mcqTestState.value
+        if (state.isSubmitted || state.questions.isEmpty()) return
+
+        var correctCount = 0
+        val questions = state.questions
+
+        viewModelScope.launch {
+            questions.forEach { q ->
+                val userChoice = state.userAnswers[q.id]
+                val isCorrect = userChoice != null && userChoice == q.correctOptionIndex
+                if (isCorrect) {
+                    correctCount++
+                }
+
+                // Update topic progress in Room DB
+                repository.recordMcqPractice(q.topicId, 1, if (isCorrect) 1 else 0)
+
+                // Log error if wrong
+                if (!isCorrect) {
+                    val userMistakeText = if (userChoice != null && userChoice in q.options.indices) {
+                        q.options[userChoice]
+                    } else {
+                        "Unattempted"
+                    }
+                    val correctRuleText = "${q.options.getOrNull(q.correctOptionIndex) ?: ""} (Ref: ${q.icaiProvisionRef})"
+
+                    repository.logError(
+                        paperName = q.paper.shortName,
+                        topicId = q.topicId,
+                        topicName = q.topicName,
+                        priorityTierName = q.priorityTier.label,
+                        questionOrConcept = q.questionStem,
+                        userMistake = userMistakeText,
+                        correctRule = correctRuleText
+                    )
+                }
+            }
+
+            _mcqTestState.value = state.copy(
+                isSubmitted = true,
+                scoreCorrect = correctCount,
+                totalQuestions = questions.size
+            )
+        }
+    }
+
+    fun resetMcqTest() {
+        selectMcqTestPaper(_mcqTestState.value.selectedPaper)
+    }
+
+    fun generateAiMcqTest() {
+        val paper = _mcqTestState.value.selectedPaper
+        val topics = repository.getTopicsForPaper(paper)
+        val randomTopicName = topics.randomOrNull()?.topicName ?: paper.title
+
+        _mcqTestState.value = _mcqTestState.value.copy(isGeneratingAi = true, errorMessage = null)
+
+        viewModelScope.launch {
+            val key = com.example.data.ai.GeminiApiClient.getApiKey(repository.customApiKey)
+            if (key.isNotBlank() && !_isOffline.value) {
+                val result = com.example.data.ai.GeminiApiClient.generateAiMcqs(paper, randomTopicName, key)
+                result.onSuccess { aiMcqs ->
+                    val combined = (aiMcqs + com.example.data.curriculum.CuratedMcqBank.getMcqsForPaper(paper)).distinctBy { it.id }
+                    _mcqTestState.value = _mcqTestState.value.copy(
+                        questions = combined.take(6),
+                        userAnswers = emptyMap(),
+                        isSubmitted = false,
+                        scoreCorrect = 0,
+                        totalQuestions = combined.take(6).size,
+                        isGeneratingAi = false
+                    )
+                }.onFailure { err ->
+                    _mcqTestState.value = _mcqTestState.value.copy(
+                        isGeneratingAi = false,
+                        errorMessage = err.message ?: "Could not fetch AI MCQs. Showing Curated Bank."
+                    )
+                }
+            } else {
+                val fallback = com.example.data.curriculum.CuratedMcqBank.getMcqsForPaper(paper)
+                _mcqTestState.value = _mcqTestState.value.copy(
+                    questions = fallback,
+                    userAnswers = emptyMap(),
+                    isSubmitted = false,
+                    isGeneratingAi = false,
+                    errorMessage = "Offline Mode: Loaded Curated ICAI 2-Mark MCQs."
+                )
+            }
+        }
+    }
+
+    fun resolveErrorLog(id: Long) {
+        viewModelScope.launch {
+            repository.resolveErrorLog(id)
+        }
     }
 
     fun setMode(mode: LabMode) {

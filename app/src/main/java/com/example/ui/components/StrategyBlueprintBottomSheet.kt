@@ -290,15 +290,20 @@ fun StrategyBlueprintBottomSheet(
                     .fillMaxWidth()
                     .weight(1f)
             ) {
+                val contentSections = remember(displayContent) {
+                    displayContent.split("\n\n").filter { it.isNotBlank() }
+                }
+
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(14.dp)
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    item {
+                    items(contentSections, key = { it.hashCode() }) { paragraph ->
                         FormattedText(
-                            text = displayContent,
+                            text = paragraph,
                             style = MaterialTheme.typography.bodyMedium,
                             lineHeight = 22.sp
                         )

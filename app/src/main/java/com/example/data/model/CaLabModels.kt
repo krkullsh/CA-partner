@@ -135,3 +135,18 @@ data class DepthExplanation(
     val depth2: String,
     val depth3: String
 )
+
+data class McqQuestion(
+    val id: String,
+    val paper: PaperCode,
+    val topicId: String,
+    val topicName: String,
+    val priorityTier: PriorityTier,
+    val caseScenarioText: String? = null,
+    val questionStem: String,
+    val options: List<String>,
+    val correctOptionIndex: Int,
+    val explanation: String,
+    val icaiProvisionRef: String
+)
+

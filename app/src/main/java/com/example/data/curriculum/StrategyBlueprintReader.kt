@@ -25,14 +25,16 @@ object StrategyBlueprintReader {
         val filename = paperToBlueprintFile[paper]
         val text = if (filename != null) {
             try {
-                val assetManager = context.assets
-                val filesInAssets = assetManager.list("") ?: emptyArray()
-                val targetFile = filesInAssets.firstOrNull { it.equals(filename, ignoreCase = true) } ?: filename
+                kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    val assetManager = context.assets
+                    val filesInAssets = assetManager.list("") ?: emptyArray()
+                    val targetFile = filesInAssets.firstOrNull { it.equals(filename, ignoreCase = true) } ?: filename
 
-                assetManager.open(targetFile).use { inputStream ->
-                    BufferedReader(InputStreamReader(inputStream)).use { reader ->
-                        val readText = reader.readText()
-                        if (readText.isNotBlank()) readText else getFallbackSummary(paper)
+                    assetManager.open(targetFile).use { inputStream ->
+                        BufferedReader(InputStreamReader(inputStream)).use { reader ->
+                            val readText = reader.readText()
+                            if (readText.isNotBlank()) readText else getFallbackSummary(paper)
+                        }
                     }
                 }
             } catch (e: Exception) {
