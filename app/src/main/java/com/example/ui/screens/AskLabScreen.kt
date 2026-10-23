@@ -38,6 +38,8 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -86,6 +88,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.curriculum.CaSyllabusData
+import com.example.data.curriculum.CuratedQuestionBank
 import com.example.data.curriculum.MarkdownQuestionParser
 import com.example.data.curriculum.PracticeQuestion
 import com.example.data.local.TopicProgressEntity
@@ -592,6 +595,19 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
                     }
                 }
             }
+
+            // Below the 3-Tier Depth explanation card:
+            // Collapsible "Practice High-Chance Exam Questions (Timed)"
+            state.selectedTopic?.let { topic ->
+                item {
+                    CollapsiblePracticeQuestionsCard(
+                        topic = topic,
+                        isExpanded = state.isPracticeQuestionsExpanded,
+                        onToggleExpand = { viewModel.togglePracticeQuestionsExpanded() },
+                        onWrittenSolved = { viewModel.incrementWrittenSolved(topic.id) }
+                    )
+                }
+            }
         } else {
             // TAB 1: STRATEGY & EXAM QUESTION BANK (TIMED PRACTICE)
             item {
@@ -603,8 +619,10 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
 
             state.selectedTopic?.let { topic ->
                 item {
-                    TimedPracticeQuestionSection(
+                    CollapsiblePracticeQuestionsCard(
                         topic = topic,
+                        isExpanded = true,
+                        onToggleExpand = {},
                         onWrittenSolved = { viewModel.incrementWrittenSolved(topic.id) }
                     )
                 }
@@ -692,7 +710,8 @@ fun TopicStrategyProgressCard(
                 Surface(
                     shape = RoundedCornerShape(6.dp),
                     color = tierColor.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, tierColor.copy(alpha = 0.6f))
+                    border = BorderStroke(1.dp, tierColor.copy(alpha = 0.6f)),
+                    modifier = Modifier.testTag("badge_priority_tier")
                 ) {
                     Text(
                         text = topic.priorityTier.label,
@@ -705,7 +724,8 @@ fun TopicStrategyProgressCard(
 
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.testTag("badge_past_paper_frequency")
                 ) {
                     Text(
                         text = "📊 ${topic.pastPaperFrequency}",
@@ -718,7 +738,8 @@ fun TopicStrategyProgressCard(
 
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = Amber500.copy(alpha = 0.15f)
+                    color = Amber500.copy(alpha = 0.15f),
+                    modifier = Modifier.testTag("badge_average_marks")
                 ) {
                     Text(
                         text = "🎯 ~${topic.averageMarks.toInt()}M Avg",
@@ -740,6 +761,170 @@ fun TopicStrategyProgressCard(
                         fontSize = 10.sp,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // 3 COMPACT PROGRESS COUNTERS (Written, MCQs, Oral Recall)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("compact_progress_counters_row"),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // 1. Written
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Sky500.copy(alpha = 0.1f),
+                    border = BorderStroke(1.dp, Sky500.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("progress_counter_written")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Assignment,
+                                contentDescription = null,
+                                tint = Sky500,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "Written",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Sky500
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = "$writtenSolved / ${topic.writtenTarget}",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Sky500,
+                            modifier = Modifier
+                                .clickable { onIncrementWritten() }
+                                .testTag("increment_written_button")
+                        ) {
+                            Text(
+                                text = "+1 Solved",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+
+                // 2. MCQs
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = SuccessGreen.copy(alpha = 0.1f),
+                    border = BorderStroke(1.dp, SuccessGreen.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("progress_counter_mcq")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Speed,
+                                contentDescription = null,
+                                tint = SuccessGreen,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "MCQs",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SuccessGreen
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = "$mcqAttempted / ${topic.mcqTarget}",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        val mcqSub = if (mcqAttempted > 0) "${(mcqCorrect * 100) / mcqAttempted}% Acc" else "Target"
+                        Text(
+                            text = mcqSub,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = SuccessGreen
+                        )
+                    }
+                }
+
+                // 3. Oral Recall
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = tierColor.copy(alpha = 0.1f),
+                    border = BorderStroke(1.dp, tierColor.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("progress_counter_oral")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Psychology,
+                                contentDescription = null,
+                                tint = tierColor,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "Oral Recall",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = tierColor
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = "$oralRecalls / ${topic.oralRecallTarget}",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = tierColor,
+                            modifier = Modifier
+                                .clickable { onIncrementOralRecall() }
+                                .testTag("increment_oral_recall_button")
+                        ) {
+                            Text(
+                                text = "+1 Recall",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
             }
 
@@ -900,376 +1085,540 @@ fun TopicStrategyProgressCard(
 }
 
 @Composable
-fun TimedPracticeQuestionSection(
+fun CollapsiblePracticeQuestionsCard(
     topic: SyllabusTopic,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
     onWrittenSolved: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val questions = remember(topic.id) {
-        MarkdownQuestionParser.getQuestionsForTopic(context, topic)
+    val questions = remember(topic.id, topic.paper) {
+        val paperQuestions = CuratedQuestionBank.getQuestionsForPaper(topic.paper)
+        val chapLower = topic.chapter.lowercase()
+        val topicLower = topic.topicName.lowercase()
+        val matched = paperQuestions.filter { q ->
+            q.chapterName.contains(chapLower, ignoreCase = true) ||
+            q.questionText.contains(topicLower, ignoreCase = true) ||
+            topic.fusedWithTopics.any { fused -> q.chapterName.contains(fused, ignoreCase = true) || q.questionText.contains(fused, ignoreCase = true) }
+        }
+        if (matched.isNotEmpty()) matched else paperQuestions
     }
 
     var activeQuestionIndex by remember(topic.id) { mutableIntStateOf(0) }
     val currentQuestion = questions.getOrNull(activeQuestionIndex) ?: questions.firstOrNull()
 
-    if (currentQuestion == null) {
-        Surface(
-            shape = RoundedCornerShape(12.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = modifier.fillMaxWidth()
-        ) {
-            Text("No practice questions found for this topic.", modifier = Modifier.padding(16.dp))
-        }
-        return
-    }
-
-    var userDraftInput by remember(currentQuestion.id) { mutableStateOf("") }
-    var isAnswerRevealed by remember(currentQuestion.id) { mutableStateOf(false) }
-
-    // Live Countdown Timer (1.8 mins per mark or minutesAllowed)
-    var remainingSeconds by remember(currentQuestion.id) {
-        mutableIntStateOf(currentQuestion.minutesAllowed * 60)
-    }
-    var isTimerRunning by remember(currentQuestion.id) { mutableStateOf(false) }
-
-    LaunchedEffect(isTimerRunning, remainingSeconds) {
-        if (isTimerRunning && remainingSeconds > 0) {
-            delay(1000L)
-            remainingSeconds--
-        } else if (remainingSeconds <= 0) {
-            isTimerRunning = false
-        }
-    }
-
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.2.dp, Amber500.copy(alpha = 0.5f)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         modifier = modifier
             .fillMaxWidth()
-            .testTag("timed_practice_question_card")
+            .testTag("collapsible_practice_questions_card")
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            // Header: Question index switcher & Question navigation
+            // Collapsible Header
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleExpand() }
+                    .testTag("practice_questions_header"),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Box(
                         modifier = Modifier
-                            .size(28.dp)
+                            .size(34.dp)
                             .clip(CircleShape)
-                            .background(Amber500.copy(alpha = 0.2f)),
+                            .background(Amber500.copy(alpha = 0.15f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "${activeQuestionIndex + 1}",
-                            fontWeight = FontWeight.Bold,
-                            color = Amber500,
-                            fontSize = 12.sp
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Question ${activeQuestionIndex + 1} of ${questions.size}",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
-                if (questions.size > 1) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = {
-                                if (activeQuestionIndex > 0) activeQuestionIndex--
-                            },
-                            enabled = activeQuestionIndex > 0,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous")
-                        }
-                        IconButton(
-                            onClick = {
-                                if (activeQuestionIndex < questions.size - 1) activeQuestionIndex++
-                            },
-                            enabled = activeQuestionIndex < questions.size - 1,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next")
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Metadata Badges e.g. [5 Marks | 6 Minutes | ICAI FAV | High Chance]
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                item {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = Color(0xFFEF4444).copy(alpha = 0.15f)
-                    ) {
-                        Text(
-                            text = "${currentQuestion.marks} Marks",
-                            color = Color(0xFFEF4444),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                        )
-                    }
-                }
-                item {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = Sky500.copy(alpha = 0.15f)
-                    ) {
-                        Text(
-                            text = "${currentQuestion.minutesAllowed} Mins",
-                            color = Sky500,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                        )
-                    }
-                }
-                items(currentQuestion.tags, key = { it }) { tag ->
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Text(
-                            text = tag,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 10.sp,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Live Countdown Timer Banner
-            val minutesLeft = remainingSeconds / 60
-            val secondsLeft = remainingSeconds % 60
-            val timeString = String.format("%02d:%02d", minutesLeft, secondsLeft)
-            val isUrgent = remainingSeconds in 1..60
-
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isUrgent) Color(0xFFFEF2F2) else MaterialTheme.colorScheme.surfaceVariant
-                ),
-                border = BorderStroke(1.dp, if (isUrgent) Color(0xFFEF4444) else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             imageVector = Icons.Default.Timer,
                             contentDescription = null,
-                            tint = if (isUrgent) Color(0xFFEF4444) else Amber500,
+                            tint = Amber500,
                             modifier = Modifier.size(20.dp)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "Exam Speed Timer",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = timeString,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = if (isUrgent) Color(0xFFEF4444) else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
                     }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Practice High-Chance Exam Questions (Timed)",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "${questions.size} ICAI Exam Questions Available • Speed Timer",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        IconButton(
-                            onClick = { isTimerRunning = !isTimerRunning },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isTimerRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (isTimerRunning) "Pause" else "Start",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                isTimerRunning = false
-                                remainingSeconds = currentQuestion.minutesAllowed * 60
-                            },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Reset", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+                IconButton(
+                    onClick = onToggleExpand,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("practice_questions_expand_toggle")
+                ) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        tint = Amber500
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            if (isExpanded) {
+                Spacer(modifier = Modifier.height(12.dp))
 
-            // Question Statement
-            Text(
-                text = currentQuestion.questionText,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                lineHeight = 22.sp
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Answer Draft Input Box
-            OutlinedTextField(
-                value = userDraftInput,
-                onValueChange = { userDraftInput = it },
-                label = { Text("Draft your solution / legal provisions / working notes here...", fontSize = 12.sp) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(130.dp)
-                    .testTag("practice_draft_input"),
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                )
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Evaluate & Reveal Button
-            Button(
-                onClick = {
-                    if (!isAnswerRevealed) {
-                        isAnswerRevealed = true
-                        onWrittenSolved()
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("reveal_practice_answer_button"),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isAnswerRevealed) SuccessGreen else MaterialTheme.colorScheme.primary
-                )
-            ) {
-                Icon(
-                    imageVector = if (isAnswerRevealed) Icons.Default.CheckCircle else Icons.AutoMirrored.Filled.FactCheck,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (isAnswerRevealed) "Official ICAI Answer Revealed ✓" else "Evaluate & Reveal Official Answer",
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            // REVEALED OFFICIAL ANSWER & EXAMINER OBSERVATIONS
-            if (isAnswerRevealed) {
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // 1. Official Answer Card
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                    border = BorderStroke(1.dp, SuccessGreen.copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Official Suggested Answer", fontWeight = FontWeight.Bold, color = SuccessGreen, fontSize = 13.sp)
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        FormattedText(
-                            text = currentQuestion.officialAnswer,
-                            style = MaterialTheme.typography.bodySmall,
-                            lineHeight = 20.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // 2. Approach & Time-Saving Tips Card
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Sky500.copy(alpha = 0.08f)),
-                    border = BorderStroke(1.dp, Sky500.copy(alpha = 0.35f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Lightbulb, contentDescription = null, tint = Sky500, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Approach & Time-Saving Tips", fontWeight = FontWeight.Bold, color = Sky500, fontSize = 13.sp)
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        FormattedText(
-                            text = currentQuestion.approachTips,
-                            style = MaterialTheme.typography.bodySmall,
-                            lineHeight = 19.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // 3. Examiner Observations (Mistakes to Avoid) Card
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)),
-                    border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.35f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Examiner Observations (Mistakes to Avoid)", fontWeight = FontWeight.Bold, color = ErrorRed, fontSize = 13.sp)
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        FormattedText(
-                            text = currentQuestion.examinerObservations,
-                            style = MaterialTheme.typography.bodySmall,
-                            lineHeight = 19.sp,
-                            color = Color(0xFF7F1D1D)
-                        )
-                    }
-                }
-
-                // Next Question Button
-                if (activeQuestionIndex < questions.size - 1) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = { activeQuestionIndex++ },
+                if (currentQuestion == null) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Practice Next Question (${activeQuestionIndex + 2} of ${questions.size}) →")
+                        Text(
+                            text = "No questions found in CuratedQuestionBank for this topic.",
+                            modifier = Modifier.padding(16.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    var userDraftInput by remember(currentQuestion.id) { mutableStateOf("") }
+                    var isAnswerRevealed by remember(currentQuestion.id) { mutableStateOf(false) }
+
+                    // Start/Stop Countdown Timer (minutesAllowed minutes)
+                    var remainingSeconds by remember(currentQuestion.id) {
+                        mutableIntStateOf(currentQuestion.minutesAllowed * 60)
+                    }
+                    var isTimerRunning by remember(currentQuestion.id) { mutableStateOf(false) }
+
+                    LaunchedEffect(isTimerRunning, remainingSeconds) {
+                        if (isTimerRunning && remainingSeconds > 0) {
+                            delay(1000L)
+                            remainingSeconds--
+                        } else if (remainingSeconds <= 0) {
+                            isTimerRunning = false
+                        }
+                    }
+
+                    // Question Switcher Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .background(Amber500.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "${activeQuestionIndex + 1}",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Amber500,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "${currentQuestion.questionNumber} (${activeQuestionIndex + 1} of ${questions.size})",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        if (questions.size > 1) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = {
+                                        if (activeQuestionIndex > 0) {
+                                            activeQuestionIndex--
+                                            isAnswerRevealed = false
+                                            isTimerRunning = false
+                                        }
+                                    },
+                                    enabled = activeQuestionIndex > 0,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous")
+                                }
+                                IconButton(
+                                    onClick = {
+                                        if (activeQuestionIndex < questions.size - 1) {
+                                            activeQuestionIndex++
+                                            isAnswerRevealed = false
+                                            isTimerRunning = false
+                                        }
+                                    },
+                                    enabled = activeQuestionIndex < questions.size - 1,
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next")
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Question Badges (Marks, Minutes, ICAI FAV, High Chance, tags)
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFFEF4444).copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = "${currentQuestion.marks} Marks",
+                                    color = Color(0xFFEF4444),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                        item {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Sky500.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = "${currentQuestion.minutesAllowed} Mins",
+                                    color = Sky500,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                        items(currentQuestion.tags, key = { it }) { tag ->
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Text(
+                                    text = tag,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Countdown Timer Controls Banner
+                    val minutesLeft = remainingSeconds / 60
+                    val secondsLeft = remainingSeconds % 60
+                    val timeString = String.format("%02d:%02d", minutesLeft, secondsLeft)
+                    val isUrgent = remainingSeconds in 1..60
+
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isUrgent) Color(0xFFFEF2F2) else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        border = BorderStroke(1.dp, if (isUrgent) Color(0xFFEF4444) else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("practice_timer_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Timer,
+                                    contentDescription = null,
+                                    tint = if (isUrgent) Color(0xFFEF4444) else Amber500,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Exam Speed Timer (${currentQuestion.minutesAllowed} min target)",
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = timeString,
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (isUrgent) Color(0xFFEF4444) else MaterialTheme.colorScheme.onSurface,
+                                        modifier = Modifier.testTag("practice_timer_text")
+                                    )
+                                }
+                            }
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = { isTimerRunning = !isTimerRunning },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isTimerRunning) Amber500 else MaterialTheme.colorScheme.primary
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.testTag("practice_timer_toggle_button")
+                                ) {
+                                    Icon(
+                                        imageVector = if (isTimerRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isTimerRunning) "Stop" else "Start",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        isTimerRunning = false
+                                        remainingSeconds = currentQuestion.minutesAllowed * 60
+                                    },
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .testTag("practice_timer_reset_button")
+                                ) {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = "Reset Timer",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Question Statement
+                    Text(
+                        text = currentQuestion.questionText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        lineHeight = 22.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Answer Draft Input Box
+                    OutlinedTextField(
+                        value = userDraftInput,
+                        onValueChange = { userDraftInput = it },
+                        label = { Text("Draft your solution / working notes here...", fontSize = 12.sp) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .testTag("practice_draft_input"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // "Reveal ICAI Answer & Examiner Traps" Button
+                    Button(
+                        onClick = {
+                            if (!isAnswerRevealed) {
+                                isAnswerRevealed = true
+                                onWrittenSolved()
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("reveal_answer_traps_button")
+                            .testTag("reveal_practice_answer_button"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isAnswerRevealed) SuccessGreen else MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = if (isAnswerRevealed) Icons.Default.CheckCircle else Icons.AutoMirrored.Filled.FactCheck,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isAnswerRevealed) "ICAI Answer & Traps Revealed ✓" else "Reveal ICAI Answer & Examiner Traps",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    // Revealed Answers, Approach Tips & Examiner Observations
+                    if (isAnswerRevealed) {
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // 1. Official Suggested Answer Card
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                            border = BorderStroke(1.dp, SuccessGreen.copy(alpha = 0.4f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("practice_official_answer_card")
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = SuccessGreen,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "Official ICAI Suggested Answer",
+                                        fontWeight = FontWeight.Bold,
+                                        color = SuccessGreen,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                FormattedText(
+                                    text = currentQuestion.officialAnswer,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    lineHeight = 20.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // 2. Approach & Time-Saving Tips Card
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Sky500.copy(alpha = 0.08f)),
+                            border = BorderStroke(1.dp, Sky500.copy(alpha = 0.35f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("practice_approach_tips_card")
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.Lightbulb,
+                                        contentDescription = null,
+                                        tint = Sky500,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "ICAI Approach & Time-Saving Tips",
+                                        fontWeight = FontWeight.Bold,
+                                        color = Sky500,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                FormattedText(
+                                    text = currentQuestion.approachTips,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    lineHeight = 19.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // 3. Examiner Observations & Traps Card
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)),
+                            border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.35f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("practice_examiner_observations_card")
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.Warning,
+                                        contentDescription = null,
+                                        tint = ErrorRed,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "Examiner Observations & Common Traps",
+                                        fontWeight = FontWeight.Bold,
+                                        color = ErrorRed,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                FormattedText(
+                                    text = currentQuestion.examinerObservations,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    lineHeight = 19.sp,
+                                    color = Color(0xFF7F1D1D)
+                                )
+                            }
+                        }
+
+                        // Next Question Button
+                        if (activeQuestionIndex < questions.size - 1) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    activeQuestionIndex++
+                                    isAnswerRevealed = false
+                                    isTimerRunning = false
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("practice_next_question_button")
+                            ) {
+                                Text("Practice Next Question (${activeQuestionIndex + 2} of ${questions.size}) →")
+                            }
+                        }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+fun TimedPracticeQuestionSection(
+    topic: SyllabusTopic,
+    onWrittenSolved: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    CollapsiblePracticeQuestionsCard(
+        topic = topic,
+        isExpanded = true,
+        onToggleExpand = {},
+        onWrittenSolved = onWrittenSolved,
+        modifier = modifier
+    )
 }
 
 @Composable

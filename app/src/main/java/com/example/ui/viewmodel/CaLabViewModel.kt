@@ -9,6 +9,8 @@ import com.example.data.curriculum.CaSyllabusData
 import com.example.data.curriculum.CuratedCatchLabScenarios
 import com.example.data.curriculum.CuratedDifferences
 import com.example.data.curriculum.CuratedExplanations
+import com.example.data.curriculum.CuratedQuestionBank
+import com.example.data.curriculum.PracticeQuestion
 import com.example.data.local.CaLabDatabase
 import com.example.data.model.CatchLabScenario
 import com.example.data.model.ChatMessage
@@ -56,7 +58,8 @@ data class AskLabState(
     val customQuery: String = "",
     val displayedContent: String = "",
     val isLoading: Boolean = false,
-    val showBookmarkedOnly: Boolean = false
+    val showBookmarkedOnly: Boolean = false,
+    val isPracticeQuestionsExpanded: Boolean = true
 )
 
 data class SpotDifferenceState(
@@ -414,6 +417,25 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateAskCustomQuery(query: String) {
         _askState.value = _askState.value.copy(customQuery = query)
+    }
+
+    fun togglePracticeQuestionsExpanded() {
+        _askState.value = _askState.value.copy(
+            isPracticeQuestionsExpanded = !_askState.value.isPracticeQuestionsExpanded
+        )
+    }
+
+    fun getPracticeQuestionsForTopic(topic: SyllabusTopic?): List<PracticeQuestion> {
+        if (topic == null) return emptyList()
+        val allForPaper = CuratedQuestionBank.getQuestionsForPaper(topic.paper)
+        val matched = allForPaper.filter { q ->
+            val chapLower = topic.chapter.lowercase()
+            val topicLower = topic.topicName.lowercase()
+            q.chapterName.contains(chapLower, ignoreCase = true) ||
+            q.questionText.contains(topicLower, ignoreCase = true) ||
+            topic.fusedWithTopics.any { fused -> q.chapterName.contains(fused, ignoreCase = true) || q.questionText.contains(fused, ignoreCase = true) }
+        }
+        return if (matched.isNotEmpty()) matched else allForPaper
     }
 
     fun searchOrGenerateExplanation() {

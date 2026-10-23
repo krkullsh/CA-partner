@@ -220,5 +220,55 @@ class ExampleRobolectricTest {
       assertTrue("Blueprint for ${paper.name} should contain strategy keywords", md.contains("Strategy", ignoreCase = true) || md.contains("Blueprint", ignoreCase = true) || md.contains("Section", ignoreCase = true))
     }
   }
+
+  @Test
+  fun `verify CuratedQuestionBank has at least 2 high-chance ICAI exam questions per paper from Paper 1 to 6`() {
+    val allPapers = PaperCode.entries
+    assertEquals(6, allPapers.size)
+
+    allPapers.forEach { paper ->
+      val questions = com.example.data.curriculum.CuratedQuestionBank.getQuestionsForPaper(paper)
+      assertTrue("Paper ${paper.code} must have at least 2 curated high-chance questions", questions.size >= 2)
+
+      questions.forEach { q ->
+        assertTrue("Question id must be non-blank", q.id.isNotBlank())
+        assertTrue("Question marks must be positive", q.marks > 0)
+        assertTrue("Question minutesAllowed must be positive", q.minutesAllowed > 0)
+        assertTrue("Question officialAnswer must be non-blank", q.officialAnswer.isNotBlank())
+        assertTrue("Question approachTips must be non-blank", q.approachTips.isNotBlank())
+        assertTrue("Question examinerObservations must be non-blank", q.examinerObservations.isNotBlank())
+        assertTrue("Question tags must include ICAI FAV or High Chance", q.tags.any { it.contains("ICAI FAV", ignoreCase = true) || it.contains("High Chance", ignoreCase = true) })
+      }
+    }
+  }
+
+  @Test
+  fun `verify parseQuestionsFromAssets safely falls back to CuratedQuestionBank on missing asset`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val result = com.example.data.curriculum.parseQuestionsFromAssets(
+      context = context,
+      fileName = "non_existent_exam_questions_file.md",
+      paper = PaperCode.PAPER_3
+    )
+
+    assertTrue("Result must fall back to CuratedQuestionBank for Paper 3", result.isNotEmpty())
+    assertEquals(com.example.data.curriculum.CuratedQuestionBank.getQuestionsForPaper(PaperCode.PAPER_3).size, result.size)
+  }
+
+  @Test
+  fun `verify CaLabViewModel manages practice questions and expand state`() {
+    val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+    val vm = com.example.ui.viewmodel.CaLabViewModel(app)
+
+    assertTrue("Practice questions should initially be expanded", vm.askState.value.isPracticeQuestionsExpanded)
+    vm.togglePracticeQuestionsExpanded()
+    org.junit.Assert.assertFalse("Practice questions should now be collapsed", vm.askState.value.isPracticeQuestionsExpanded)
+    vm.togglePracticeQuestionsExpanded()
+    assertTrue("Practice questions should now be expanded again", vm.askState.value.isPracticeQuestionsExpanded)
+
+    val topic = CaSyllabusData.topics.first { it.paper == PaperCode.PAPER_1 }
+    val questions = vm.getPracticeQuestionsForTopic(topic)
+    assertTrue("Should fetch practice questions for topic", questions.isNotEmpty())
+  }
 }
 
