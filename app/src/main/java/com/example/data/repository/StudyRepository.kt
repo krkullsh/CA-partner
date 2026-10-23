@@ -9,6 +9,7 @@ import com.example.data.curriculum.CuratedDifferences
 import com.example.data.curriculum.CuratedExplanations
 import com.example.data.local.BookmarkEntity
 import com.example.data.local.CaLabDatabase
+import com.example.data.local.TopicProgressEntity
 import com.example.data.local.VerdictEntity
 import com.example.data.model.CatchLabScenario
 import com.example.data.model.ConceptDifference
@@ -112,6 +113,55 @@ class StudyRepository(
     suspend fun isBookmarked(id: String): Boolean = database.studyDao().isBookmarked(id)
 
     fun getBookmarks(): Flow<List<BookmarkEntity>> = database.studyDao().getAllBookmarks()
+
+    // Database: Topic Progress
+    fun getAllTopicProgress(): Flow<List<TopicProgressEntity>> = database.studyDao().getAllProgress()
+
+    suspend fun getTopicProgress(topicId: String): TopicProgressEntity? =
+        database.studyDao().getProgressForTopic(topicId)
+
+    suspend fun recordWrittenPractice(topicId: String) {
+        val existing = database.studyDao().getProgressForTopic(topicId)
+        if (existing == null) {
+            database.studyDao().insertOrUpdateProgress(
+                TopicProgressEntity(topicId = topicId, writtenSolved = 1, lastRevisedAt = System.currentTimeMillis())
+            )
+        } else {
+            database.studyDao().incrementWrittenCount(topicId)
+        }
+    }
+
+    suspend fun recordOralRecall(topicId: String) {
+        val existing = database.studyDao().getProgressForTopic(topicId)
+        if (existing == null) {
+            database.studyDao().insertOrUpdateProgress(
+                TopicProgressEntity(topicId = topicId, oralRecallsCompleted = 1, lastRevisedAt = System.currentTimeMillis())
+            )
+        } else {
+            database.studyDao().incrementOralRecallCount(topicId)
+        }
+    }
+
+    suspend fun recordMcqPractice(topicId: String, attempted: Int, correct: Int) {
+        val existing = database.studyDao().getProgressForTopic(topicId)
+        if (existing == null) {
+            database.studyDao().insertOrUpdateProgress(
+                TopicProgressEntity(
+                    topicId = topicId,
+                    mcqAttempted = attempted,
+                    mcqCorrect = correct,
+                    lastRevisedAt = System.currentTimeMillis()
+                )
+            )
+        } else {
+            database.studyDao().recordMcqResult(topicId, attempted, correct)
+        }
+    }
+
+    // Strategy Blueprint Markdown Loader
+    fun getStrategyBlueprintMarkdown(paper: PaperCode): String {
+        return com.example.data.curriculum.StrategyBlueprintReader.getBlueprintMarkdown(context, paper)
+    }
 
     // AI Generation (Online with offline fallback)
     suspend fun generateAiResponse(

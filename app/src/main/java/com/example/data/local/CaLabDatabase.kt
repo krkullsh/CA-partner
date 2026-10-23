@@ -78,6 +78,16 @@ data class BookmarkEntity(
     val savedAt: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "topic_progress")
+data class TopicProgressEntity(
+    @PrimaryKey val topicId: String,
+    val writtenSolved: Int = 0,
+    val mcqAttempted: Int = 0,
+    val mcqCorrect: Int = 0,
+    val oralRecallsCompleted: Int = 0,
+    val lastRevisedAt: Long = 0L
+)
+
 @Dao
 interface StudyDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -112,9 +122,31 @@ interface StudyDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM bookmarks WHERE id = :id)")
     suspend fun isBookmarked(id: String): Boolean
+
+    // Topic Progress tracking
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateProgress(progress: TopicProgressEntity)
+
+    @Query("SELECT * FROM topic_progress WHERE topicId = :topicId")
+    suspend fun getProgressForTopic(topicId: String): TopicProgressEntity?
+
+    @Query("SELECT * FROM topic_progress")
+    fun getAllProgress(): Flow<List<TopicProgressEntity>>
+
+    @Query("SELECT * FROM topic_progress")
+    suspend fun getAllProgressList(): List<TopicProgressEntity>
+
+    @Query("UPDATE topic_progress SET writtenSolved = writtenSolved + 1, lastRevisedAt = :timestamp WHERE topicId = :topicId")
+    suspend fun incrementWrittenCount(topicId: String, timestamp: Long = System.currentTimeMillis())
+
+    @Query("UPDATE topic_progress SET oralRecallsCompleted = oralRecallsCompleted + 1, lastRevisedAt = :timestamp WHERE topicId = :topicId")
+    suspend fun incrementOralRecallCount(topicId: String, timestamp: Long = System.currentTimeMillis())
+
+    @Query("UPDATE topic_progress SET mcqAttempted = mcqAttempted + :attempted, mcqCorrect = mcqCorrect + :correct, lastRevisedAt = :timestamp WHERE topicId = :topicId")
+    suspend fun recordMcqResult(topicId: String, attempted: Int, correct: Int, timestamp: Long = System.currentTimeMillis())
 }
 
-@Database(entities = [VerdictEntity::class, BookmarkEntity::class], version = 1, exportSchema = false)
+@Database(entities = [VerdictEntity::class, BookmarkEntity::class, TopicProgressEntity::class], version = 2, exportSchema = false)
 abstract class CaLabDatabase : RoomDatabase() {
     abstract fun studyDao(): StudyDao
 

@@ -250,16 +250,8 @@ Output strictly a JSON object with this schema:
                     val contentObj = candidate.optJSONObject("content")
                     val parts = contentObj?.optJSONArray("parts")
                     if (parts != null && parts.length() > 0) {
-                        var text = parts.getJSONObject(0).optString("text").trim()
-                        if (text.startsWith("```json")) {
-                            text = text.removePrefix("```json").trim()
-                        }
-                        if (text.startsWith("```")) {
-                            text = text.removePrefix("```").trim()
-                        }
-                        if (text.endsWith("```")) {
-                            text = text.removeSuffix("```").trim()
-                        }
+                        val rawText = parts.getJSONObject(0).optString("text")
+                        val text = cleanJsonString(rawText)
 
                         val parsedObj = JSONObject(text)
                         val score = parsedObj.optInt("masteryScore", 70).coerceIn(0, 100)
@@ -365,10 +357,8 @@ Output strictly a JSON object with this schema:
                     val contentObj = candidate.optJSONObject("content")
                     val parts = contentObj?.optJSONArray("parts")
                     if (parts != null && parts.length() > 0) {
-                        var text = parts.getJSONObject(0).optString("text").trim()
-                        if (text.startsWith("```json")) text = text.removePrefix("```json").trim()
-                        if (text.startsWith("```")) text = text.removePrefix("```").trim()
-                        if (text.endsWith("```")) text = text.removeSuffix("```").trim()
+                        val rawText = parts.getJSONObject(0).optString("text")
+                        val text = cleanJsonString(rawText)
 
                         val parsedObj = JSONObject(text)
                         val title = parsedObj.optString("title", "AI Generated Trick Case: $topicName")
@@ -485,10 +475,8 @@ Output strictly a JSON object with this schema:
                     val contentObj = candidate.optJSONObject("content")
                     val parts = contentObj?.optJSONArray("parts")
                     if (parts != null && parts.length() > 0) {
-                        var text = parts.getJSONObject(0).optString("text").trim()
-                        if (text.startsWith("```json")) text = text.removePrefix("```json").trim()
-                        if (text.startsWith("```")) text = text.removePrefix("```").trim()
-                        if (text.endsWith("```")) text = text.removeSuffix("```").trim()
+                        val rawText = parts.getJSONObject(0).optString("text")
+                        val text = cleanJsonString(rawText)
 
                         val parsedObj = JSONObject(text)
                         val title = parsedObj.optString("title", query)
@@ -532,5 +520,32 @@ Output strictly a JSON object with this schema:
             Log.e(TAG, "Exception creating AI concept difference", e)
             Result.failure(e)
         }
+    }
+
+    private fun cleanJsonString(raw: String): String {
+        var text = raw.trim()
+        if (text.startsWith("```json", ignoreCase = true)) {
+            text = text.substring(7).trim()
+        } else if (text.startsWith("```")) {
+            text = text.substring(3).trim()
+        }
+        if (text.endsWith("```")) {
+            text = text.substring(0, text.length - 3).trim()
+        }
+        val firstObj = text.indexOf('{')
+        val firstArr = text.indexOf('[')
+        val start = when {
+            firstObj != -1 && firstArr != -1 -> minOf(firstObj, firstArr)
+            firstObj != -1 -> firstObj
+            firstArr != -1 -> firstArr
+            else -> -1
+        }
+        val lastObj = text.lastIndexOf('}')
+        val lastArr = text.lastIndexOf(']')
+        val end = maxOf(lastObj, lastArr)
+        if (start != -1 && end != -1 && end >= start) {
+            text = text.substring(start, end + 1).trim()
+        }
+        return text
     }
 }

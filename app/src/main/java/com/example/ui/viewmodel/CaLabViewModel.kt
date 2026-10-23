@@ -119,6 +119,22 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
         .map { list -> list.map { it.id }.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
+    val topicProgressMap: StateFlow<Map<String, com.example.data.local.TopicProgressEntity>> = repository.getAllTopicProgress()
+        .map { list -> list.associateBy { it.topicId } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    fun incrementWrittenSolved(topicId: String) {
+        viewModelScope.launch {
+            repository.recordWrittenPractice(topicId)
+        }
+    }
+
+    fun incrementOralRecall(topicId: String) {
+        viewModelScope.launch {
+            repository.recordOralRecall(topicId)
+        }
+    }
+
     fun toggleBookmark(id: String, type: String, title: String, paperName: String) {
         viewModelScope.launch {
             repository.toggleBookmark(id, type, title, paperName)
@@ -285,6 +301,7 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
 
                 // Save to Room DB
                 repository.saveVerdict(verdict)
+                repository.recordOralRecall(topic.id)
                 loadVerdictsDashboard()
 
                 val currentMessages = _teachState.value.messages.toMutableList()

@@ -160,4 +160,65 @@ class ExampleRobolectricTest {
     repo.toggleBookmark(topicId, "TOPIC", "Test Topic", "Paper 1")
     org.junit.Assert.assertFalse(repo.isBookmarked(topicId))
   }
+
+  @Test
+  fun `verify MarkdownQuestionParser and CuratedQuestionBank provide high-chance questions`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val allPapers = PaperCode.entries
+
+    allPapers.forEach { paper ->
+      val questions = com.example.data.curriculum.MarkdownQuestionParser.getQuestionsForPaper(context, paper)
+      assertTrue("Paper ${paper.code} should have practice questions", questions.isNotEmpty())
+
+      questions.forEach { q ->
+        assertTrue("Question ${q.id} should have valid marks", q.marks > 0)
+        assertTrue("Question ${q.id} should have valid minutes", q.minutesAllowed > 0)
+        assertTrue("Question ${q.id} should have non-blank official answer", q.officialAnswer.isNotBlank())
+        assertTrue("Question ${q.id} should have non-blank approach tips", q.approachTips.isNotBlank())
+        assertTrue("Question ${q.id} should have non-blank examiner observations", q.examinerObservations.isNotBlank())
+      }
+    }
+
+    // Verify Compulsory Q1 Fused questions exist
+    val p1Questions = com.example.data.curriculum.MarkdownQuestionParser.getQuestionsForPaper(context, PaperCode.PAPER_1)
+    assertTrue(p1Questions.any { it.id == "p1_q1_fused_as15_as10" })
+
+    val p2Questions = com.example.data.curriculum.MarkdownQuestionParser.getQuestionsForPaper(context, PaperCode.PAPER_2)
+    assertTrue(p2Questions.any { it.id == "p2_q1_fused_law" })
+  }
+
+  @Test
+  fun `verify TopicProgress tracking in database and repository`() = kotlinx.coroutines.test.runTest {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = com.example.data.local.CaLabDatabase.getInstance(context)
+    val repo = com.example.data.repository.StudyRepository(db, context)
+
+    val topicId = "p1_as10"
+    repo.recordWrittenPractice(topicId)
+    repo.recordWrittenPractice(topicId)
+    repo.recordOralRecall(topicId)
+    repo.recordMcqPractice(topicId, attempted = 10, correct = 8)
+
+    val progress = repo.getTopicProgress(topicId)
+    assertNotNull(progress)
+    assertEquals(2, progress?.writtenSolved)
+    assertEquals(1, progress?.oralRecallsCompleted)
+    assertEquals(10, progress?.mcqAttempted)
+    assertEquals(8, progress?.mcqCorrect)
+    assertTrue((progress?.lastRevisedAt ?: 0L) > 0L)
+  }
+
+  @Test
+  fun `verify StrategyBlueprintReader loads markdown for all 6 papers`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val db = com.example.data.local.CaLabDatabase.getInstance(context)
+    val repo = com.example.data.repository.StudyRepository(db, context)
+
+    PaperCode.entries.forEach { paper ->
+      val md = repo.getStrategyBlueprintMarkdown(paper)
+      assertTrue("Blueprint for ${paper.name} should not be blank", md.isNotBlank())
+      assertTrue("Blueprint for ${paper.name} should contain strategy keywords", md.contains("Strategy", ignoreCase = true) || md.contains("Blueprint", ignoreCase = true) || md.contains("Section", ignoreCase = true))
+    }
+  }
 }
+

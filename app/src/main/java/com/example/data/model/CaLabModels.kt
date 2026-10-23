@@ -61,6 +61,13 @@ data class LabVerdict(
     val createdAt: Long = System.currentTimeMillis()
 )
 
+enum class PriorityTier(val label: String, val badgeColorHex: Long, val weightMultiplier: Double) {
+    TIER_1("Tier 1 • MUST / Fortress", 0xFFEF4444, 3.0),
+    TIER_2("Tier 2 • HIGH Yield", 0xFFF59E0B, 2.2),
+    TIER_3("Tier 3 • MODERATE / Steady", 0xFF0EA5E9, 1.5),
+    TIER_4("Tier 4 • LOW / Booster", 0xFF64748B, 1.0)
+}
+
 data class StandardBlueprint(
     val scope: String,
     val recognitionAndMeasurement: String,
@@ -74,6 +81,15 @@ data class SyllabusTopic(
     val topicName: String,
     val moduleName: String = "Module 1",
     val blueprint: StandardBlueprint? = null,
+    val priorityTier: PriorityTier = PriorityTier.TIER_2,
+    val pastPaperFrequency: String = "6/6 Attempts",
+    val averageMarks: Double = 8.0,
+    val trendDirection: String = "Consistent",
+    val writtenTarget: Int = 6,
+    val mcqTarget: Int = 25,
+    val oralRecallTarget: Int = 3,
+    val oralRhythmNote: String = "Recall key provisions every 3rd day",
+    val fusedWithTopics: List<String> = emptyList(),
     val keyProvisions: List<String>,
     val commonExaminerPitfalls: String
 )

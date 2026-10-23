@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.CheckCircle
@@ -87,6 +88,7 @@ fun TeachLabScreen(viewModel: CaLabViewModel) {
     val listState = rememberLazyListState()
 
     var showTopicPicker by remember { mutableStateOf(false) }
+    var showBlueprintBottomSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) {
@@ -104,8 +106,39 @@ fun TeachLabScreen(viewModel: CaLabViewModel) {
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .clickable { showBlueprintBottomSheet = true }
+                        .testTag("teach_open_paper_blueprint_button")
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Paper Strategy Blueprint",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+
             items(PaperCode.entries, key = { it.name }) { paper ->
                 val selected = state.selectedPaper == paper
                 FilterChip(
@@ -532,6 +565,14 @@ fun TeachLabScreen(viewModel: CaLabViewModel) {
         VerdictModal(
             verdict = state.latestVerdict!!,
             onDismiss = { viewModel.dismissVerdictModal() }
+        )
+    }
+
+    // Strategy Blueprint Bottom Sheet Modal
+    if (showBlueprintBottomSheet) {
+        com.example.ui.components.StrategyBlueprintBottomSheet(
+            paper = state.selectedPaper,
+            onDismiss = { showBlueprintBottomSheet = false }
         )
     }
 }
