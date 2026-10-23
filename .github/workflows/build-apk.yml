@@ -19,23 +19,32 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      # Automatically finds where gradlew is hiding and runs from there
-      - name: Locate project and build APK
+      - name: Inspect Workspace & Build APK
         run: |
-          # Find the directory containing gradlew
-          GRADLEW_PATH=$(find . -name "gradlew" -maxdepth 3)
-          if [ -z "$GRADLEW_PATH" ]; then
-            echo "Error: gradlew not found!"
-            exit 1
+          echo "=== Listing Repository Root Contents ==="
+          ls -la
+          
+          # Check if gradlew is in root, if not search everywhere
+          if [ -f "./gradlew" ]; then
+            echo "Found gradlew in root!"
+            chmod +x gradlew
+            ./gradlew assembleDebug
+          else
+            echo "gradlew not in root, searching subdirectories..."
+            GRADLEW_FILE=$(find . -name "gradlew" -type f | head -n 1)
+            
+            if [ -z "$GRADLEW_FILE" ]; then
+              echo "CRITICAL ERROR: No gradlew file found anywhere in the repository!"
+              echo "Make sure you committed your Android project files properly."
+              exit 1
+            fi
+            
+            PROJECT_DIR=$(dirname "$GRADLEW_FILE")
+            echo "Found project directory at: $PROJECT_DIR"
+            cd "$PROJECT_DIR"
+            chmod +x gradlew
+            ./gradlew assembleDebug
           fi
-          
-          # Get the project root folder
-          PROJECT_DIR=$(dirname "$GRADLEW_PATH")
-          echo "Found project directory at: $PROJECT_DIR"
-          
-          cd "$PROJECT_DIR"
-          chmod +x gradlew
-          ./gradlew assembleDebug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
