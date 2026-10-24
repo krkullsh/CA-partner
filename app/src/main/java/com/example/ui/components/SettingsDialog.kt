@@ -59,7 +59,7 @@ fun SettingsDialog(
     val hasValidKey = viewModel.repository.hasValidGeminiKey()
 
     val groqApiKey by viewModel.groqApiKey.collectAsState()
-val selectedAiProvider by viewModel.selectedAiProvider.collectAsState() 
+    val selectedAiProvider by viewModel.selectedAiProvider.collectAsState()
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -148,7 +148,7 @@ val selectedAiProvider by viewModel.selectedAiProvider.collectAsState()
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Cloud AI Configuration (Updated Title)
+                // Cloud AI Configuration
                 Text("Cloud AI Configuration", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -159,13 +159,13 @@ val selectedAiProvider by viewModel.selectedAiProvider.collectAsState()
                 ) {
                     FilterChip(
                         selected = selectedAiProvider == "GEMINI",
-                        onClick = { selectedAiProvider = "GEMINI" },
+                        onClick = { viewModel.setAiProvider("GEMINI") },
                         label = { Text("Gemini") }
                     )
                     FilterChip(
                         selected = selectedAiProvider == "GROQ",
-                        onClick = { selectedAiProvider = "GROQ" },
-                        label = { Text("Groq (Llama 3)") }
+                        onClick = { viewModel.setAiProvider("GROQ") },
+                        label = { Text("Groq (Llama 3.3 70B)") }
                     )
                 }
 
@@ -210,7 +210,7 @@ val selectedAiProvider by viewModel.selectedAiProvider.collectAsState()
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "ℹ️ Groq API Key required for Llama 3 8B",
+                            text = "ℹ️ Groq API Key required for Llama 3.3 70B",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = Amber500,
@@ -222,7 +222,7 @@ val selectedAiProvider by viewModel.selectedAiProvider.collectAsState()
 
                     OutlinedTextField(
                         value = groqApiKey,
-                        onValueChange = { groqApiKey = it },
+                        onValueChange = { viewModel.setGroqApiKey(it) },
                         placeholder = { Text("gsk_...", fontSize = 12.sp) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(10.dp),
