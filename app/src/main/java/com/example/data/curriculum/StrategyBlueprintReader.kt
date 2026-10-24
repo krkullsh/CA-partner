@@ -2,6 +2,9 @@ package com.example.data.curriculum
 
 import android.content.Context
 import com.example.data.model.PaperCode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.ConcurrentHashMap
@@ -19,23 +22,18 @@ object StrategyBlueprintReader {
         PaperCode.PAPER_6 to "CA_Inter_FM_SM_Master_Strategy_Blueprint.md"
     )
 
+    fun readBlueprintForPaper(context: Context, paper: PaperCode): String {
+        return getBlueprintMarkdown(context, paper)
+    }
+
     fun getBlueprintMarkdown(context: Context, paper: PaperCode): String {
         blueprintCache[paper]?.let { return it }
 
         val filename = paperToBlueprintFile[paper]
         val text = if (filename != null) {
             try {
-                kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                    val assetManager = context.assets
-                    val filesInAssets = assetManager.list("") ?: emptyArray()
-                    val targetFile = filesInAssets.firstOrNull { it.equals(filename, ignoreCase = true) } ?: filename
-
-                    assetManager.open(targetFile).use { inputStream ->
-                        BufferedReader(InputStreamReader(inputStream)).use { reader ->
-                            val readText = reader.readText()
-                            if (readText.isNotBlank()) readText else getFallbackSummary(paper)
-                        }
-                    }
+                runBlocking(Dispatchers.IO) {
+                    readAssetSafely(context, filename, paper)
                 }
             } catch (e: Exception) {
                 getFallbackSummary(paper)
@@ -46,6 +44,25 @@ object StrategyBlueprintReader {
 
         blueprintCache[paper] = text
         return text
+    }
+
+    private suspend fun readAssetSafely(context: Context, filename: String, paper: PaperCode): String {
+        return withContext(Dispatchers.IO) {
+            try {
+                val assetManager = context.assets
+                val filesInAssets = assetManager.list("") ?: emptyArray()
+                val targetFile = filesInAssets.firstOrNull { it.equals(filename, ignoreCase = true) } ?: filename
+
+                assetManager.open(targetFile).use { inputStream ->
+                    BufferedReader(InputStreamReader(inputStream)).use { reader ->
+                        val readText = reader.readText()
+                        if (readText.isNotBlank()) readText else getFallbackSummary(paper)
+                    }
+                }
+            } catch (e: Exception) {
+                getFallbackSummary(paper)
+            }
+        }
     }
 
     fun getFallbackSummary(paper: PaperCode): String {

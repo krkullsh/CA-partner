@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,11 +26,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -39,10 +40,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,7 +53,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -60,9 +60,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.curriculum.StrategyBlueprintReader
 import com.example.data.model.PaperCode
-import com.example.ui.theme.Amber500
 import com.example.ui.theme.Sky500
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,8 +75,19 @@ fun StrategyBlueprintBottomSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val coroutineScope = rememberCoroutineScope()
 
-    val rawMarkdown = remember(paper) {
-        StrategyBlueprintReader.getBlueprintMarkdown(context, paper)
+    var rawMarkdown by remember(paper) { mutableStateOf("") }
+    var isLoading by remember(paper) { mutableStateOf(true) }
+
+    LaunchedEffect(paper) {
+        isLoading = true
+        rawMarkdown = withContext(Dispatchers.IO) {
+            runCatching {
+                StrategyBlueprintReader.getBlueprintMarkdown(context, paper)
+            }.getOrElse {
+                StrategyBlueprintReader.getFallbackSummary(paper)
+            }
+        }
+        isLoading = false
     }
 
     var searchQuery by remember { mutableStateOf("") }
@@ -108,7 +120,9 @@ fun StrategyBlueprintBottomSheet(
     // Split markdown into searchable segments (by double-newlines or sections)
     val displayContent by remember(rawMarkdown, searchQuery, selectedQuickSection) {
         derivedStateOf {
-            if (searchQuery.isNotBlank()) {
+            if (rawMarkdown.isBlank()) {
+                "Loading Strategy Blueprint..."
+            } else if (searchQuery.isNotBlank()) {
                 val queryLower = searchQuery.trim().lowercase()
                 val paragraphs = rawMarkdown.split("\n\n")
                 val matching = paragraphs.filter { it.lowercase().contains(queryLower) }
@@ -123,7 +137,6 @@ fun StrategyBlueprintBottomSheet(
                 val paragraphs = rawMarkdown.split("\n\n")
                 val startIndex = paragraphs.indexOfFirst { it.lowercase().contains(sectionLower) }
                 if (startIndex != -1) {
-                    // Show from this section forward
                     val takeSections = paragraphs.drop(startIndex).take(10)
                     takeSections.joinToString("\n\n")
                 } else {
@@ -141,12 +154,12 @@ fun StrategyBlueprintBottomSheet(
         dragHandle = null,
         modifier = Modifier
             .fillMaxWidth()
-            .fillMaxHeight(0.95f)
             .testTag("strategy_blueprint_bottom_sheet")
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
+                .fillMaxHeight(0.90f)
                 .background(MaterialTheme.colorScheme.surface)
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
@@ -290,23 +303,44 @@ fun StrategyBlueprintBottomSheet(
                     .fillMaxWidth()
                     .weight(1f)
             ) {
-                val contentSections = remember(displayContent) {
-                    displayContent.split("\n\n").filter { it.isNotBlank() }
-                }
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Loading Strategy Blueprint...", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                } else {
+                    val contentSections = remember(displayContent) {
+                        displayContent.split("\n\n").filter { it.isNotBlank() }
+                    }
 
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(contentSections, key = { it.hashCode() }) { paragraph ->
-                        FormattedText(
-                            text = paragraph,
-                            style = MaterialTheme.typography.bodyMedium,
-                            lineHeight = 22.sp
-                        )
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        itemsIndexed(contentSections, key = { index, item -> "${index}_${item.hashCode()}" }) { _, paragraph ->
+                            runCatching {
+                                FormattedText(
+                                    text = paragraph,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    lineHeight = 22.sp
+                                )
+                            }.getOrElse {
+                                Text(
+                                    text = paragraph,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    lineHeight = 22.sp
+                                )
+                            }
+                        }
                     }
                 }
             }

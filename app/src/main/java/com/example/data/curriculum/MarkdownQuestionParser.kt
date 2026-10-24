@@ -3,6 +3,9 @@ package com.example.data.curriculum
 import android.content.Context
 import com.example.data.model.PaperCode
 import com.example.data.model.SyllabusTopic
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.util.concurrent.ConcurrentHashMap
@@ -29,8 +32,8 @@ object MarkdownQuestionParser {
         val assetName = paperAssetFileMap[paper]
         val parsedFromAsset = if (assetName != null) {
             try {
-                kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                    parseFromAsset(context, assetName, paper)
+                runBlocking(Dispatchers.IO) {
+                    parseFromAssetSafely(context, assetName, paper)
                 }
             } catch (_: Exception) {
                 emptyList()
@@ -50,7 +53,6 @@ object MarkdownQuestionParser {
         val allForPaper = getQuestionsForPaper(context, topic.paper)
         val topicNameLower = topic.topicName.lowercase()
         val chapterLower = topic.chapter.lowercase()
-        val moduleLower = topic.moduleName.lowercase()
         val fusedKeywords = topic.fusedWithTopics.map { it.lowercase() }
 
         // Find matches by topic name, chapter name, or fused topics
@@ -73,16 +75,21 @@ object MarkdownQuestionParser {
         return if (matched.isNotEmpty()) {
             matched
         } else {
-            // Fallback to top curated questions for this paper so student always has high-chance practice
             allForPaper.take(4)
         }
     }
 
     private enum class ParsingSection { NONE, QUESTION, ANSWER, APPROACH, OBSERVATIONS }
 
+    private suspend fun parseFromAssetSafely(context: Context, filename: String, paper: PaperCode): List<PracticeQuestion> {
+        return withContext(Dispatchers.IO) {
+            parseFromAsset(context, filename, paper)
+        }
+    }
+
     fun parseFromAsset(context: Context, filename: String, paper: PaperCode): List<PracticeQuestion> {
         val parsedList = mutableListOf<PracticeQuestion>()
-        try {
+        runCatching {
             val assetManager = context.assets
             val filesInAssets = assetManager.list("") ?: emptyArray()
             val targetFile = filesInAssets.firstOrNull { it.equals(filename, ignoreCase = true) } ?: filename
@@ -230,8 +237,6 @@ object MarkdownQuestionParser {
 
                 flushCurrentQuestion()
             }
-        } catch (e: Exception) {
-            // Non-fatal; falls back to curated questions
         }
         return parsedList
     }
@@ -245,36 +250,37 @@ object MarkdownQuestionParser {
             return Triple(marks, minutes, listOf("ICAI FAV", "High Chance"))
         }
 
-        // Clean surrounding braces/brackets
-        val cleaned = metaRaw.removePrefix("[").removeSuffix("]").removePrefix("(").removeSuffix(")")
+        runCatching {
+            val cleaned = metaRaw.removePrefix("[").removeSuffix("]").removePrefix("(").removeSuffix(")")
 
-        // Extract marks
-        val marksMatcher = Pattern.compile("(\\d+)\\s*(?:Marks|marks|M\\b)", Pattern.CASE_INSENSITIVE).matcher(cleaned)
-        if (marksMatcher.find()) {
-            marks = marksMatcher.group(1)?.toIntOrNull() ?: 5
-        }
+            // Extract marks
+            val marksMatcher = Pattern.compile("(\\d+)\\s*(?:Marks|marks|M\\b)", Pattern.CASE_INSENSITIVE).matcher(cleaned)
+            if (marksMatcher.find()) {
+                marks = marksMatcher.group(1)?.toIntOrNull() ?: 5
+            }
 
-        // Extract minutes
-        val minsMatcher = Pattern.compile("(\\d+)\\s*(?:Minutes|minutes|mins|Mins|min)", Pattern.CASE_INSENSITIVE).matcher(cleaned)
-        if (minsMatcher.find()) {
-            minutes = minsMatcher.group(1)?.toIntOrNull() ?: kotlin.math.max(4, (marks * 1.8).toInt())
-        } else {
-            minutes = kotlin.math.max(4, (marks * 1.8).toInt())
-        }
+            // Extract minutes
+            val minsMatcher = Pattern.compile("(\\d+)\\s*(?:Minutes|minutes|mins|Mins|min)", Pattern.CASE_INSENSITIVE).matcher(cleaned)
+            if (minsMatcher.find()) {
+                minutes = minsMatcher.group(1)?.toIntOrNull() ?: kotlin.math.max(4, (marks * 1.8).toInt())
+            } else {
+                minutes = kotlin.math.max(4, (marks * 1.8).toInt())
+            }
 
-        // Extract tags
-        val rawTokens = cleaned.split("|", "I", "•", "·", ")(")
-        rawTokens.forEach { token ->
-            val t = token.trim()
-                .removePrefix("(").removeSuffix(")")
-                .removePrefix("[").removeSuffix("]")
-                .trim()
-            if (t.isNotBlank() &&
-                !t.contains("mark", ignoreCase = true) &&
-                !t.contains("min", ignoreCase = true) &&
-                t.length in 2..40
-            ) {
-                tags.add(t)
+            // Extract tags
+            val rawTokens = cleaned.split("|", "I", "•", "·", ")(")
+            rawTokens.forEach { token ->
+                val t = token.trim()
+                    .removePrefix("(").removeSuffix(")")
+                    .removePrefix("[").removeSuffix("]")
+                    .trim()
+                if (t.isNotBlank() &&
+                    !t.contains("mark", ignoreCase = true) &&
+                    !t.contains("min", ignoreCase = true) &&
+                    t.length in 2..40
+                ) {
+                    tags.add(t)
+                }
             }
         }
 
