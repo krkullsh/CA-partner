@@ -19,23 +19,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Generate Gradle Wrapper & Build APK
+      - name: Build APK
         run: |
-          echo "Installing system Gradle to generate missing wrapper..."
-          sudo apt-get update
-          sudo apt-get install -y gradle
+          # If gradlew wrapper file is missing, generate a fresh compatible one using gradle build tool
+          if [ ! -f "./gradlew" ]; then
+            echo "Generating wrapper using gradle..."
+            gradle wrapper --gradle-version 8.5
+          fi
           
-          # Automatically find where build.gradle.kts is located
-          BUILD_FILE=$(find . -name "build.gradle.kts" -maxdepth 3 | head -n 1)
-          PROJECT_DIR=$(dirname "$BUILD_FILE")
-          echo "Target project directory: $PROJECT_DIR"
-          
-          cd "$PROJECT_DIR"
-          
-          echo "Generating gradlew wrapper..."
-          gradle wrapper
-          
-          echo "Building Debug APK..."
           chmod +x gradlew
           ./gradlew assembleDebug
 
