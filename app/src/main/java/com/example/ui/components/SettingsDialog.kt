@@ -58,10 +58,8 @@ fun SettingsDialog(
     var customKey by remember { mutableStateOf(viewModel.repository.customApiKey) }
     val hasValidKey = viewModel.repository.hasValidGeminiKey()
 
-    // State variables for Groq and Provider Selection
-    // TODO: Connect these to your SharedPreferences/DataStore in the ViewModel
-    var groqApiKey by remember { mutableStateOf("") }
-    var selectedAiProvider by remember { mutableStateOf("GEMINI") }
+    val groqApiKey by viewModel.groqApiKey.collectAsState()
+val selectedAiProvider by viewModel.selectedAiProvider.collectAsState() 
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
