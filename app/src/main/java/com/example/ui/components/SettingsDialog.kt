@@ -47,6 +47,10 @@ import com.example.ui.theme.Sky500
 import com.example.ui.theme.SuccessGreen
 import com.example.ui.viewmodel.CaLabViewModel
 
+// Add these alongside your existing apiKey state
+var groqApiKey by remember { mutableStateOf(/* Load from preferences */ "") }
+var selectedAiProvider by remember { mutableStateOf("GEMINI") } // "GEMINI" or "GROQ"
+
 @Composable
 fun SettingsDialog(
     viewModel: CaLabViewModel,
