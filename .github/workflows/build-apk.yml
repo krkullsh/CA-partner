@@ -19,12 +19,15 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Build APK
+      - name: Build APK with Gradle 9.3.1
         run: |
-          # If gradlew wrapper file is missing, generate a fresh compatible one using gradle build tool
+          # Generate a compatible wrapper matching Gradle 9.3.1 as required by your plugin
           if [ ! -f "./gradlew" ]; then
-            echo "Generating wrapper using gradle..."
-            gradle wrapper --gradle-version 8.5
+            echo "Generating wrapper using gradle 9.3.1..."
+            gradle wrapper --gradle-version 9.3.1
+          else
+            # Update existing wrapper to 9.3.1
+            ./gradlew wrapper --gradle-version 9.3.1
           fi
           
           chmod +x gradlew
