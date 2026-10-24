@@ -19,9 +19,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Generate Dummy Debug Keystore
+        run: |
+          # Generate a valid debug.keystore on the fly to satisfy the build requirement
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
+
       - name: Build Debug APK
         run: |
-          # Ensure wrapper is set to 9.3.1
           if [ ! -f "./gradlew" ]; then
             gradle wrapper --gradle-version 9.3.1
           else
@@ -30,8 +34,8 @@ jobs:
           
           chmod +x gradlew
           
-          # Build package using assembleDebug and bypass signing validation if needed
-          ./gradlew assembleDebug -x validateSigningDebug
+          # Now it has the keystore, so we can run the normal build command!
+          ./gradlew assembleDebug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
