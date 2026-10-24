@@ -14,13 +14,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,10 +48,7 @@ import com.example.ui.theme.Sky500
 import com.example.ui.theme.SuccessGreen
 import com.example.ui.viewmodel.CaLabViewModel
 
-// Add these alongside your existing apiKey state
-var groqApiKey by remember { mutableStateOf(/* Load from preferences */ "") }
-var selectedAiProvider by remember { mutableStateOf("GEMINI") } // "GEMINI" or "GROQ"
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsDialog(
     viewModel: CaLabViewModel,
@@ -59,6 +57,11 @@ fun SettingsDialog(
     val isOffline by viewModel.isOffline.collectAsState()
     var customKey by remember { mutableStateOf(viewModel.repository.customApiKey) }
     val hasValidKey = viewModel.repository.hasValidGeminiKey()
+
+    // State variables for Groq and Provider Selection
+    // TODO: Connect these to your SharedPreferences/DataStore in the ViewModel
+    var groqApiKey by remember { mutableStateOf("") }
+    var selectedAiProvider by remember { mutableStateOf("GEMINI") }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -119,7 +122,7 @@ fun SettingsDialog(
                                         fontSize = 14.sp
                                     )
                                     Text(
-                                        text = if (isOffline) "Instant local heuristic engine" else "Live Gemini 3.8 Flash reasoning",
+                                        text = if (isOffline) "Instant local heuristic engine" else "Live Cloud AI reasoning",
                                         fontSize = 11.sp,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -137,7 +140,7 @@ fun SettingsDialog(
                             text = if (isOffline)
                                 "⚡ Offline Mode works anywhere with zero internet! It uses preloaded ICAI syllabus provisions, trick cases, difference tables, and intelligent follow-up doubts."
                             else
-                                "🌐 Cloud Mode connects to Gemini to answer any custom doubts, simulate realistic dynamic articleship dialogues, and grade any topic.",
+                                "🌐 Cloud Mode connects to AI to answer any custom doubts, simulate realistic dynamic articleship dialogues, and grade any topic.",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 15.sp
@@ -147,40 +150,88 @@ fun SettingsDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Gemini API Key config
-                Text("Gemini AI Configuration", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                // Cloud AI Configuration (Updated Title)
+                Text("Cloud AI Configuration", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(6.dp))
 
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (hasValidKey) SuccessGreen.copy(alpha = 0.12f) else Amber500.copy(alpha = 0.12f),
-                    modifier = Modifier.fillMaxWidth()
+                // AI Provider Selection Chips
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(
-                        text = if (hasValidKey) "✓ AI Key Active (via Secrets Panel / BuildConfig)" else "ℹ️ Optional Custom Gemini API Key",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (hasValidKey) SuccessGreen else Amber500,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    FilterChip(
+                        selected = selectedAiProvider == "GEMINI",
+                        onClick = { selectedAiProvider = "GEMINI" },
+                        label = { Text("Gemini") }
+                    )
+                    FilterChip(
+                        selected = selectedAiProvider == "GROQ",
+                        onClick = { selectedAiProvider = "GROQ" },
+                        label = { Text("Groq (Llama 3)") }
                     )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                OutlinedTextField(
-                    value = customKey,
-                    onValueChange = {
-                        customKey = it
-                        viewModel.setCustomApiKey(it)
-                    },
-                    placeholder = { Text("Enter custom Gemini API key (optional)", fontSize = 12.sp) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("custom_key_field"),
-                    shape = RoundedCornerShape(10.dp),
-                    leadingIcon = { Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    singleLine = true
-                )
+                // Dynamic Input Fields based on selected Provider
+                if (selectedAiProvider == "GEMINI") {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (hasValidKey) SuccessGreen.copy(alpha = 0.12f) else Amber500.copy(alpha = 0.12f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = if (hasValidKey) "✓ AI Key Active (via Secrets Panel / BuildConfig)" else "ℹ️ Optional Custom Gemini API Key",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (hasValidKey) SuccessGreen else Amber500,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = customKey,
+                        onValueChange = {
+                            customKey = it
+                            viewModel.setCustomApiKey(it)
+                        },
+                        placeholder = { Text("Enter custom Gemini API key", fontSize = 12.sp) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("custom_key_field"),
+                        shape = RoundedCornerShape(10.dp),
+                        leadingIcon = { Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        singleLine = true
+                    )
+                } else {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Amber500.copy(alpha = 0.12f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "ℹ️ Groq API Key required for Llama 3 8B",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Amber500,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = groqApiKey,
+                        onValueChange = { groqApiKey = it },
+                        placeholder = { Text("gsk_...", fontSize = 12.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        leadingIcon = { Icon(Icons.Default.Key, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        singleLine = true
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(14.dp))
                 HorizontalDivider()
