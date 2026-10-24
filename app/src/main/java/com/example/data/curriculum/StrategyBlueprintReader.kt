@@ -12,6 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
 object StrategyBlueprintReader {
 
     private val blueprintCache = ConcurrentHashMap<PaperCode, String>()
+    private val fullExcelMatrixCache = ConcurrentHashMap<PaperCode, com.example.data.model.StatutoryCheatMatrix>()
 
     val paperToBlueprintFile = mapOf(
         PaperCode.PAPER_1 to "CA_Inter_AdvAcc_Strategy_Blueprint.md",
@@ -21,6 +22,155 @@ object StrategyBlueprintReader {
         PaperCode.PAPER_5 to "CA_Inter_Audit_Ethics_Strategy.md",
         PaperCode.PAPER_6 to "CA_Inter_FM_SM_Master_Strategy_Blueprint.md"
     )
+
+    fun getFullExcelMatrixForPaper(context: Context, paper: PaperCode): com.example.data.model.StatutoryCheatMatrix {
+        fullExcelMatrixCache[paper]?.let { return it }
+
+        val baseMatrix = CuratedDifferences.getMatrixForPaper(paper)
+        val curatedRows = baseMatrix?.rows ?: emptyList()
+
+        // 1. Sourced from CaSyllabusData topics for this paper
+        val syllabusTopics = CaSyllabusData.getTopicsForPaper(paper)
+        val syllabusRows = syllabusTopics.map { topic ->
+            val tierLabel = topic.priorityTier.label.split("•").firstOrNull()?.trim() ?: topic.priorityTier.name
+            val moduleClean = topic.moduleName.replace("Module ", "Mod ")
+            val keyRule = if (topic.keyProvisions.isNotEmpty()) {
+                topic.keyProvisions.take(2).joinToString("; ")
+            } else {
+                topic.blueprint?.scope?.take(70) ?: "Core ICAI Standard Requirements"
+            }
+            com.example.data.model.StatutoryMatrixRow(
+                sectionOrClause = "$tierLabel • $moduleClean",
+                provisionName = "${topic.chapter}: ${topic.topicName}",
+                thresholdOrLimit = "Exam Freq: ${topic.pastPaperFrequency} (Avg: ${topic.averageMarks.toInt()}M)",
+                approvalOrRate = keyRule,
+                penaltyOrException = "Quotas — W:${topic.writtenTarget} M:${topic.mcqTarget} O:${topic.oralRecallTarget} | Pitfall: ${topic.commonExaminerPitfalls.take(70)}"
+            )
+        }
+
+        // 2. Parse Strategy Blueprint Markdown for this paper
+        val markdownText = getBlueprintMarkdown(context, paper)
+        val blueprintRows = parseBlueprintMarkdownToMatrixRows(markdownText, paper)
+
+        // 3. Combine: Curated + Blueprint Tables + Syllabus Quotas
+        val combined = ArrayList<com.example.data.model.StatutoryMatrixRow>()
+        combined.addAll(curatedRows)
+        combined.addAll(blueprintRows)
+        combined.addAll(syllabusRows)
+
+        val distinctRows = combined.distinctBy {
+            "${it.sectionOrClause.trim().lowercase()}_${it.provisionName.trim().lowercase()}"
+        }
+
+        val columnHeaders = listOf(
+            "Standard / Section / Tier",
+            "Chapter / Provision",
+            "Exam Weight / Limit",
+            "Core Formula / Approval / Key Rule",
+            "Mastery Quotas / Pitfalls / Traps"
+        )
+
+        val fullMatrix = com.example.data.model.StatutoryCheatMatrix(
+            id = "master_excel_${paper.name.lowercase()}",
+            paper = paper,
+            title = "${paper.title} — Master Excel Matrix & Quotas (${distinctRows.size} Entries)",
+            columnHeaders = columnHeaders,
+            rows = distinctRows
+        )
+
+        fullExcelMatrixCache[paper] = fullMatrix
+        return fullMatrix
+    }
+
+    private fun parseBlueprintMarkdownToMatrixRows(
+        markdownText: String,
+        paper: PaperCode
+    ): List<com.example.data.model.StatutoryMatrixRow> {
+        val rows = mutableListOf<com.example.data.model.StatutoryMatrixRow>()
+        val lines = markdownText.lines()
+
+        for (line in lines) {
+            val trimmed = line.trim()
+            if (trimmed.isBlank()) continue
+
+            // Skip footers / headers
+            val lower = trimmed.lowercase()
+            if (lower.contains("catestseries") || lower.contains("page ") || lower.contains("©") || lower.contains("india's best")) {
+                continue
+            }
+
+            // A) Markdown Table rows with '|'
+            if (trimmed.contains("|")) {
+                // Skip separator rows like |---|---|
+                val withoutSpaces = trimmed.replace(" ", "")
+                if (withoutSpaces.all { it in "|-:" }) continue
+
+                val cells = trimmed.split("|")
+                    .map { it.replace("**", "").replace("*", "").replace("`", "").trim() }
+                    .filter { it.isNotBlank() }
+
+                if (cells.size >= 2) {
+                    val col0 = cells[0]
+                    val col1 = cells[1]
+
+                    // Skip header row indicator
+                    val col0Lower = col0.lowercase()
+                    if (col0Lower == "standard" || col0Lower == "section" || col0Lower == "chapter" ||
+                        col0Lower == "as standard" || col0Lower == "clause" || col0Lower == "section / rule" ||
+                        col0Lower == "costing topic" || col0Lower == "caro clause" || col0Lower == "domain / topic"
+                    ) {
+                        continue
+                    }
+
+                    val col2 = cells.getOrElse(2) { "As per Blueprint" }.ifBlank { "As per Blueprint" }
+                    val col3 = cells.getOrElse(3) { "Core ICAI Standard Rule" }.ifBlank { "Core ICAI Standard Rule" }
+                    val col4 = cells.getOrElse(4) { "High-Yield ICAI Focus" }.ifBlank { "High-Yield ICAI Focus" }
+
+                    rows.add(
+                        com.example.data.model.StatutoryMatrixRow(
+                            sectionOrClause = col0,
+                            provisionName = col1,
+                            thresholdOrLimit = col2,
+                            approvalOrRate = col3,
+                            penaltyOrException = col4
+                        )
+                    )
+                    continue
+                }
+            }
+
+            // B) High-yield bullet points: e.g. • **Schedule III Financial Statements:** 14M Compulsory Q2 in 6/6 attempts...
+            val bulletMatch = Regex("""^[•\-\*]\s*\*\*(.*?)\*\*:?\s*(.*)$""").find(trimmed)
+            if (bulletMatch != null) {
+                val header = bulletMatch.groupValues[1].replace("*", "").trim()
+                val body = bulletMatch.groupValues[2].replace("**", "").replace("*", "").trim()
+
+                if (header.isNotBlank() && body.isNotBlank() && !header.equals("section", ignoreCase = true)) {
+                    val sentences = body.split(Regex("""(?<=[.!?])\s+""")).filter { it.isNotBlank() }
+                    val firstSentence = sentences.firstOrNull() ?: body
+                    val remaining = if (sentences.size > 1) sentences.drop(1).joinToString(" ") else "Essential exam topic"
+
+                    val sectionPrefix = when {
+                        header.startsWith("AS ", ignoreCase = true) -> header.take(7)
+                        header.startsWith("SA ", ignoreCase = true) -> header.take(7)
+                        header.startsWith("Sec", ignoreCase = true) -> header.take(8)
+                        else -> "Blueprint • ${paper.shortName}"
+                    }
+
+                    rows.add(
+                        com.example.data.model.StatutoryMatrixRow(
+                            sectionOrClause = sectionPrefix,
+                            provisionName = header,
+                            thresholdOrLimit = firstSentence.take(90),
+                            approvalOrRate = remaining.take(90),
+                            penaltyOrException = "Exam Trap & Blueprint Rule: ${body.take(80)}"
+                        )
+                    )
+                }
+            }
+        }
+        return rows
+    }
 
     fun readBlueprintForPaper(context: Context, paper: PaperCode): String {
         return getBlueprintMarkdown(context, paper)

@@ -62,18 +62,23 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.curriculum.CaSyllabusData
 import com.example.data.curriculum.CuratedDifferences
+import com.example.data.curriculum.StrategyBlueprintReader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.example.data.model.ComparisonRow
 import com.example.data.model.ConceptDifference
 import com.example.data.model.PaperCode
@@ -596,7 +601,19 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
             }
         } else {
             // MODE 1: STATUTORY CHEAT MATRICES (EXCEL-STYLE)
-            val matrix = remember(activeMatrixPaper) { CuratedDifferences.getMatrixForPaper(activeMatrixPaper) }
+            val context = LocalContext.current
+            var selectedMatrixCategory by remember { mutableStateOf("All Rows") }
+            val matrixCategories = remember { listOf("All Rows", "Statutory Limits", "Blueprint Tables", "Syllabus & Quotas") }
+
+            val fullMatrixState by produceState<StatutoryCheatMatrix?>(
+                initialValue = CuratedDifferences.getMatrixForPaper(activeMatrixPaper),
+                activeMatrixPaper
+            ) {
+                value = withContext(Dispatchers.IO) {
+                    StrategyBlueprintReader.getFullExcelMatrixForPaper(context, activeMatrixPaper)
+                }
+            }
+            val matrix = fullMatrixState
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -618,6 +635,34 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = Amber500.copy(alpha = 0.2f),
                                     selectedLabelColor = Amber500
+                                )
+                            )
+                        }
+                    }
+                }
+
+                // Category Filter Chips (All Rows, Statutory Limits, Blueprint Tables, Syllabus & Quotas)
+                item {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(matrixCategories) { cat ->
+                            val isSelected = selectedMatrixCategory == cat
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { selectedMatrixCategory = cat },
+                                label = {
+                                    Text(
+                                        text = cat,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                modifier = Modifier.testTag("matrix_cat_${cat.replace(" ", "_").lowercase()}"),
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             )
                         }
@@ -650,7 +695,11 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
 
                 if (matrix != null) {
                     item {
-                        StatutoryCheatMatrixCard(matrix = matrix, filterQuery = matrixSearchQuery)
+                        StatutoryCheatMatrixCard(
+                            matrix = matrix,
+                            filterQuery = matrixSearchQuery,
+                            selectedCategory = selectedMatrixCategory
+                        )
                     }
                 }
             }
@@ -792,10 +841,35 @@ fun ComparisonRowCard(
 }
 
 @Composable
-fun StatutoryCheatMatrixCard(matrix: StatutoryCheatMatrix, filterQuery: String = "") {
-    val filteredRows = remember(matrix, filterQuery) {
-        if (filterQuery.isBlank()) matrix.rows
-        else matrix.rows.filter { row ->
+fun StatutoryCheatMatrixCard(
+    matrix: StatutoryCheatMatrix,
+    filterQuery: String = "",
+    selectedCategory: String = "All Rows"
+) {
+    val filteredRows = remember(matrix, filterQuery, selectedCategory) {
+        val categoryFiltered = when (selectedCategory) {
+            "Statutory Limits" -> matrix.rows.filter {
+                !it.penaltyOrException.contains("Quotas —") &&
+                (it.sectionOrClause.startsWith("Sec") || it.sectionOrClause.startsWith("AS ") ||
+                 it.sectionOrClause.startsWith("Clause") || it.sectionOrClause.startsWith("GST") ||
+                 it.sectionOrClause.startsWith("FM") || it.sectionOrClause.startsWith("SM") ||
+                 it.sectionOrClause.contains("Variance") || it.sectionOrClause.contains("Analysis"))
+            }
+            "Blueprint Tables" -> matrix.rows.filter {
+                it.sectionOrClause.startsWith("Blueprint") ||
+                it.thresholdOrLimit.contains("As per Blueprint") ||
+                it.penaltyOrException.contains("Exam Trap & Blueprint")
+            }
+            "Syllabus & Quotas" -> matrix.rows.filter {
+                it.penaltyOrException.contains("Quotas —") ||
+                it.sectionOrClause.contains("Tier 1") || it.sectionOrClause.contains("Tier 2") ||
+                it.sectionOrClause.contains("Tier 3") || it.sectionOrClause.contains("Tier 4")
+            }
+            else -> matrix.rows
+        }
+
+        if (filterQuery.isBlank()) categoryFiltered
+        else categoryFiltered.filter { row ->
             row.sectionOrClause.contains(filterQuery, ignoreCase = true) ||
             row.provisionName.contains(filterQuery, ignoreCase = true) ||
             row.thresholdOrLimit.contains(filterQuery, ignoreCase = true) ||
@@ -812,24 +886,52 @@ fun StatutoryCheatMatrixCard(matrix: StatutoryCheatMatrix, filterQuery: String =
         modifier = Modifier.fillMaxWidth().testTag("statutory_matrix_card_${matrix.paper.name}")
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.TableChart, contentDescription = null, tint = Amber500, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.TableChart, contentDescription = null, tint = Amber500, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = matrix.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Excel-Style Master Quick Reference • Category: $selectedCategory",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Amber500.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, Amber500.copy(alpha = 0.35f))
+                ) {
                     Text(
-                        text = matrix.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Excel-Style Quick Reference • Showing ${filteredRows.size} entries",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "Total Entries: ${filteredRows.size}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Amber500,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
+
+            // Column widths helper
+            fun getColumnWidth(index: Int) = when (index) {
+                0 -> 160.dp
+                1 -> 180.dp
+                2 -> 170.dp
+                3 -> 230.dp
+                else -> 260.dp
+            }
 
             // Horizontal Scrollable Matrix Table
             val horizontalScrollState = rememberScrollState()
@@ -844,10 +946,10 @@ fun StatutoryCheatMatrixCard(matrix: StatutoryCheatMatrix, filterQuery: String =
                         .background(MaterialTheme.colorScheme.primaryContainer)
                         .padding(vertical = 8.dp)
                 ) {
-                    matrix.columnHeaders.forEach { header ->
+                    matrix.columnHeaders.forEachIndexed { colIndex, header ->
                         Box(
                             modifier = Modifier
-                                .width(150.dp)
+                                .width(getColumnWidth(colIndex))
                                 .padding(horizontal = 8.dp)
                         ) {
                             Text(
@@ -869,19 +971,19 @@ fun StatutoryCheatMatrixCard(matrix: StatutoryCheatMatrix, filterQuery: String =
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(modifier = Modifier.width(150.dp).padding(horizontal = 8.dp)) {
+                        Box(modifier = Modifier.width(getColumnWidth(0)).padding(horizontal = 8.dp)) {
                             Text(row.sectionOrClause, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Amber500)
                         }
-                        Box(modifier = Modifier.width(150.dp).padding(horizontal = 8.dp)) {
+                        Box(modifier = Modifier.width(getColumnWidth(1)).padding(horizontal = 8.dp)) {
                             Text(row.provisionName, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         }
-                        Box(modifier = Modifier.width(150.dp).padding(horizontal = 8.dp)) {
+                        Box(modifier = Modifier.width(getColumnWidth(2)).padding(horizontal = 8.dp)) {
                             Text(row.thresholdOrLimit, fontSize = 11.sp, color = Sky500)
                         }
-                        Box(modifier = Modifier.width(150.dp).padding(horizontal = 8.dp)) {
+                        Box(modifier = Modifier.width(getColumnWidth(3)).padding(horizontal = 8.dp)) {
                             Text(row.approvalOrRate, fontSize = 11.sp)
                         }
-                        Box(modifier = Modifier.width(150.dp).padding(horizontal = 8.dp)) {
+                        Box(modifier = Modifier.width(getColumnWidth(4)).padding(horizontal = 8.dp)) {
                             Text(row.penaltyOrException, fontSize = 11.sp, color = ErrorRed)
                         }
                     }
@@ -894,7 +996,8 @@ fun StatutoryCheatMatrixCard(matrix: StatutoryCheatMatrix, filterQuery: String =
                             .padding(24.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("No statutory limits match '$filterQuery'", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val emptyMsg = if (filterQuery.isNotBlank()) "No rows match '$filterQuery' in $selectedCategory" else "No rows found in category '$selectedCategory'"
+                        Text(emptyMsg, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
