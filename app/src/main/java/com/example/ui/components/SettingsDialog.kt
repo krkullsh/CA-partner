@@ -159,12 +159,12 @@ fun SettingsDialog(
                 ) {
                     FilterChip(
                         selected = selectedAiProvider == "GEMINI",
-                        onClick = { viewModel.setAiProvider("GEMINI") },
+                       onClick = { viewModel.setAiProvider("GEMINI") },
                         label = { Text("Gemini") }
                     )
                     FilterChip(
                         selected = selectedAiProvider == "GROQ",
-                        onClick = { viewModel.setAiProvider("GROQ") },
+                       onClick = { viewModel.setAiProvider("GROQ") },
                         label = { Text("Groq (Llama 3.3 70B)") }
                     )
                 }
