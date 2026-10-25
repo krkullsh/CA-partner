@@ -93,8 +93,7 @@ data class McqTestState(
 
 class CaLabViewModel(application: Application) : AndroidViewModel(application) {
 
-    val repository = StudyRepository(
-        private val prefs = application.getSharedPreferences("ca_lab_settings", android.content.Context.MODE_PRIVATE)
+    private val prefs = application.getSharedPreferences("ca_lab_settings", android.content.Context.MODE_PRIVATE)
 
     private val _groqApiKey = MutableStateFlow(prefs.getString("groq_api_key", "") ?: "")
     val groqApiKey: StateFlow<String> = _groqApiKey.asStateFlow()
@@ -111,6 +110,8 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
         _selectedAiProvider.value = provider
         prefs.edit().putString("ai_provider", provider).apply()
     }
+
+    val repository = StudyRepository(
         CaLabDatabase.getInstance(application.applicationContext),
         application.applicationContext
     )
