@@ -2,11 +2,14 @@ package com.example.data.repository
 
 import android.content.Context
 import com.example.data.ai.GeminiApiClient
+import com.example.data.ai.GroqApiClient
 import com.example.data.ai.OfflineLabEngine
 import com.example.data.curriculum.CaSyllabusData
 import com.example.data.curriculum.CuratedCatchLabScenarios
 import com.example.data.curriculum.CuratedDifferences
 import com.example.data.curriculum.CuratedExplanations
+import com.example.data.curriculum.CuratedMcqBank
+import com.example.data.curriculum.StrategyBlueprintReader
 import com.example.data.local.BookmarkEntity
 import com.example.data.local.CaLabDatabase
 import com.example.data.local.TopicProgressEntity
@@ -15,10 +18,10 @@ import com.example.data.model.CatchLabScenario
 import com.example.data.model.ConceptDifference
 import com.example.data.model.DepthExplanation
 import com.example.data.model.LabVerdict
+import com.example.data.model.McqQuestion
 import com.example.data.model.PaperCode
-import com.example.data.model.SyllabusTopic
-import com.example.data.curriculum.StrategyBlueprintReader
 import com.example.data.model.SubjectArchetype
+import com.example.data.model.SyllabusTopic
 import com.example.data.model.TeacherSection
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -28,6 +31,7 @@ class StudyRepository(
     private val context: Context
 ) {
     private val prefs = context.getSharedPreferences("ca_lab_prefs", Context.MODE_PRIVATE)
+    private val settingsPrefs = context.getSharedPreferences("ca_lab_settings", Context.MODE_PRIVATE)
 
     // Online / Offline settings
     var isOfflineMode: Boolean
@@ -43,7 +47,19 @@ class StudyRepository(
         }
 
     fun hasValidGeminiKey(): Boolean {
-        return GeminiApiClient.getApiKey(customApiKey).isNotBlank()
+        return getGeminiApiKey().isNotBlank()
+    }
+
+    fun getSelectedAiProvider(): String {
+        return settingsPrefs.getString("ai_provider", "GEMINI") ?: "GEMINI"
+    }
+
+    fun getGroqApiKey(): String {
+        return settingsPrefs.getString("groq_api_key", "") ?: ""
+    }
+
+    fun getGeminiApiKey(): String {
+        return GeminiApiClient.getApiKey(customApiKey)
     }
 
     // Syllabus
@@ -192,10 +208,13 @@ class StudyRepository(
 
     // Strategy Blueprint Markdown Loader
     fun getStrategyBlueprintMarkdown(paper: PaperCode): String {
-        return com.example.data.curriculum.StrategyBlueprintReader.getBlueprintMarkdown(context, paper)
+        return StrategyBlueprintReader.getBlueprintMarkdown(context, paper)
     }
 
-    // AI Generation (Online with offline fallback)
+    // -------------------------------------------------------------
+    // CLOUD AI INTEGRATION WITH MULTI-PROVIDER FALLBACK
+    // -------------------------------------------------------------
+
     suspend fun generateAiResponse(
         prompt: String,
         history: List<Pair<String, String>> = emptyList()
@@ -204,12 +223,33 @@ class StudyRepository(
             return Result.failure(IllegalStateException("Offline mode active"))
         }
 
-        val key = GeminiApiClient.getApiKey(customApiKey)
-        if (key.isBlank()) {
-            return Result.failure(IllegalStateException("No Gemini API key available"))
+        val provider = getSelectedAiProvider()
+        val groqKey = getGroqApiKey()
+        val geminiKey = getGeminiApiKey()
+
+        // 1. Primary choice if GROQ
+        if (provider.equals("GROQ", ignoreCase = true) && groqKey.isNotBlank()) {
+            try {
+                val resp = GroqApiClient.generateResponse(prompt, groqKey)
+                if (resp.isNotBlank()) return Result.success(resp)
+            } catch (_: Exception) {}
         }
 
-        return GeminiApiClient.generateContent(prompt, key, history)
+        // 2. Primary/Secondary Gemini
+        if (geminiKey.isNotBlank()) {
+            val geminiResult = GeminiApiClient.generateContent(prompt, geminiKey, history)
+            if (geminiResult.isSuccess) return geminiResult
+        }
+
+        // 3. Fallback Groq
+        if (!provider.equals("GROQ", ignoreCase = true) && groqKey.isNotBlank()) {
+            try {
+                val resp = GroqApiClient.generateResponse(prompt, groqKey)
+                if (resp.isNotBlank()) return Result.success(resp)
+            } catch (_: Exception) {}
+        }
+
+        return Result.failure(IllegalStateException("Cloud AI unavailable"))
     }
 
     suspend fun generateAiVerdict(
@@ -217,15 +257,33 @@ class StudyRepository(
         conversationText: String
     ): Result<LabVerdict> {
         if (isOfflineMode) {
-            return Result.failure(IllegalStateException("Offline mode active"))
+            return Result.success(OfflineLabEngine.generateVerdict(topic, conversationText))
         }
 
-        val key = GeminiApiClient.getApiKey(customApiKey)
-        if (key.isBlank()) {
-            return Result.failure(IllegalStateException("No Gemini API key available"))
+        val provider = getSelectedAiProvider()
+        val groqKey = getGroqApiKey()
+        val geminiKey = getGeminiApiKey()
+
+        // 1. Primary Groq if selected
+        if (provider.equals("GROQ", ignoreCase = true) && groqKey.isNotBlank()) {
+            val groqResult = GroqApiClient.generateVerdict(topic, conversationText, groqKey)
+            if (groqResult.isSuccess) return groqResult
         }
 
-        return GeminiApiClient.generateJsonVerdict(topic, conversationText, key)
+        // 2. Gemini
+        if (geminiKey.isNotBlank()) {
+            val geminiResult = GeminiApiClient.generateJsonVerdict(topic, conversationText, geminiKey)
+            if (geminiResult.isSuccess) return geminiResult
+        }
+
+        // 3. Fallback Groq if Gemini fails
+        if (!provider.equals("GROQ", ignoreCase = true) && groqKey.isNotBlank()) {
+            val groqResult = GroqApiClient.generateVerdict(topic, conversationText, groqKey)
+            if (groqResult.isSuccess) return groqResult
+        }
+
+        // 4. Graceful Offline Fallback
+        return Result.success(OfflineLabEngine.generateVerdict(topic, conversationText))
     }
 
     suspend fun generateTrickScenario(paper: PaperCode, topicName: String): Result<CatchLabScenario> {
@@ -233,31 +291,109 @@ class StudyRepository(
             ?: CaSyllabusData.getTopicsForPaper(paper).firstOrNull()
             ?: CaSyllabusData.topics.first()
 
-        if (!isOfflineMode && hasValidGeminiKey()) {
-            val key = GeminiApiClient.getApiKey(customApiKey)
-            val aiResult = GeminiApiClient.generateAiTrickScenario(paper, topicName, key)
-            if (aiResult.isSuccess) {
-                return aiResult
+        if (!isOfflineMode) {
+            val provider = getSelectedAiProvider()
+            val groqKey = getGroqApiKey()
+            val geminiKey = getGeminiApiKey()
+
+            if (provider.equals("GROQ", ignoreCase = true) && groqKey.isNotBlank()) {
+                val groqResult = GroqApiClient.generateCatchLabScenario(groqKey, topic)
+                if (groqResult.isSuccess) return groqResult
+            }
+
+            if (geminiKey.isNotBlank()) {
+                val geminiResult = GeminiApiClient.generateAiTrickScenario(paper, topicName, geminiKey)
+                if (geminiResult.isSuccess) return geminiResult
+            }
+
+            if (!provider.equals("GROQ", ignoreCase = true) && groqKey.isNotBlank()) {
+                val groqResult = GroqApiClient.generateCatchLabScenario(groqKey, topic)
+                if (groqResult.isSuccess) return groqResult
             }
         }
-        // Seamless fallback ensures student is never blocked by network timeouts
+
         return Result.success(OfflineLabEngine.generateOfflineTrickScenario(topic))
     }
 
     suspend fun generateConceptDifference(query: String, paper: PaperCode?): Result<ConceptDifference> {
-        if (!isOfflineMode && hasValidGeminiKey()) {
-            val key = GeminiApiClient.getApiKey(customApiKey)
-            val aiResult = GeminiApiClient.generateAiConceptDifference(query, paper, key)
-            if (aiResult.isSuccess) {
-                val diff = aiResult.getOrThrow()
-                saveCustomDifference(diff)
-                return aiResult
+        if (!isOfflineMode) {
+            val provider = getSelectedAiProvider()
+            val groqKey = getGroqApiKey()
+            val geminiKey = getGeminiApiKey()
+
+            val parts = if (query.contains(" vs ", ignoreCase = true)) {
+                query.split(Regex("(?i)\\s+vs\\s+"))
+            } else {
+                listOf(query, "Alternate")
+            }
+            val conceptA = parts.getOrNull(0)?.trim() ?: "Concept A"
+            val conceptB = parts.getOrNull(1)?.trim() ?: "Concept B"
+
+            if (provider.equals("GROQ", ignoreCase = true) && groqKey.isNotBlank()) {
+                val groqResult = GroqApiClient.generateConceptDifference(groqKey, paper ?: PaperCode.PAPER_1, conceptA, conceptB)
+                if (groqResult.isSuccess) {
+                    val diff = groqResult.getOrThrow()
+                    saveCustomDifference(diff)
+                    return groqResult
+                }
+            }
+
+            if (geminiKey.isNotBlank()) {
+                val geminiResult = GeminiApiClient.generateAiConceptDifference(query, paper, geminiKey)
+                if (geminiResult.isSuccess) {
+                    val diff = geminiResult.getOrThrow()
+                    saveCustomDifference(diff)
+                    return geminiResult
+                }
+            }
+
+            if (!provider.equals("GROQ", ignoreCase = true) && groqKey.isNotBlank()) {
+                val groqResult = GroqApiClient.generateConceptDifference(groqKey, paper ?: PaperCode.PAPER_1, conceptA, conceptB)
+                if (groqResult.isSuccess) {
+                    val diff = groqResult.getOrThrow()
+                    saveCustomDifference(diff)
+                    return groqResult
+                }
             }
         }
-        // Seamless fallback ensures student gets an instant structured comparison
+
         val offlineDiff = OfflineLabEngine.generateOfflineConceptDifference(query, paper)
         saveCustomDifference(offlineDiff)
         return Result.success(offlineDiff)
+    }
+
+    suspend fun generateMcqQuestions(
+        paper: PaperCode,
+        topicName: String,
+        count: Int = 3
+    ): Result<List<McqQuestion>> {
+        val topic = CaSyllabusData.topics.firstOrNull { it.topicName.equals(topicName, ignoreCase = true) }
+            ?: CaSyllabusData.getTopicsForPaper(paper).firstOrNull()
+            ?: CaSyllabusData.topics.first()
+
+        if (!isOfflineMode) {
+            val provider = getSelectedAiProvider()
+            val groqKey = getGroqApiKey()
+            val geminiKey = getGeminiApiKey()
+
+            if (provider.equals("GROQ", ignoreCase = true) && groqKey.isNotBlank()) {
+                val groqResult = GroqApiClient.generateMcqQuestions(groqKey, topic, count)
+                if (groqResult.isSuccess) return groqResult
+            }
+
+            if (geminiKey.isNotBlank()) {
+                val geminiResult = GeminiApiClient.generateAiMcqs(paper, topicName, geminiKey)
+                if (geminiResult.isSuccess) return geminiResult
+            }
+
+            if (!provider.equals("GROQ", ignoreCase = true) && groqKey.isNotBlank()) {
+                val groqResult = GroqApiClient.generateMcqQuestions(groqKey, topic, count)
+                if (groqResult.isSuccess) return groqResult
+            }
+        }
+
+        val fallback = CuratedMcqBank.getMcqsForPaper(paper)
+        return Result.success(fallback)
     }
 
     // Database: Custom Differences Persistence

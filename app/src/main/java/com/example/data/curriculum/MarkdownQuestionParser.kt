@@ -18,6 +18,7 @@ object MarkdownQuestionParser {
     private val paperAssetFileMap = mapOf(
         PaperCode.PAPER_1 to "Advance accounting.md",
         PaperCode.PAPER_2 to "corporate other law_.md",
+        PaperCode.PAPER_3 to "Taxation.md",
         PaperCode.PAPER_4 to "Cost and Management Accounting..md",
         PaperCode.PAPER_5 to "Auditing and Ethics.md",
         PaperCode.PAPER_6 to "FM and SM.md"

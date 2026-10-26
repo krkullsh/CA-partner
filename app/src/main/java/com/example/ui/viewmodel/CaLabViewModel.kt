@@ -506,7 +506,7 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun resetTeachLabSession(topic: SyllabusTopic?) {
-        val greeting = OfflineLabEngine.generateLabGreeting(topic)
+        val greeting = OfflineLabEngine.generateLabGreeting(topic, _experienceLevel.value)
         _teachState.value = _teachState.value.copy(
             messages = listOf(
                 ChatMessage(
@@ -566,7 +566,7 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
                 // Offline Fallback
                 kotlinx.coroutines.delay(400) // responsive typing delay
                 val followUp = if (currentTopic != null) {
-                    OfflineLabEngine.generateFollowUpDoubt(currentTopic, userText, newTurn)
+                    OfflineLabEngine.generateFollowUpDoubt(currentTopic, userText, newTurn, _experienceLevel.value)
                 } else {
                     "Got it Boss! But what specific threshold limits or exceptions apply under this provision?"
                 }
@@ -593,9 +593,9 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
 
                 val verdict = if (!_isOffline.value && repository.hasValidGeminiKey()) {
                     val result = repository.generateAiVerdict(topic, conversationText)
-                    if (result.isSuccess) result.getOrThrow() else OfflineLabEngine.generateVerdict(topic, conversationText)
+                    if (result.isSuccess) result.getOrThrow() else OfflineLabEngine.generateVerdict(topic, conversationText, _experienceLevel.value)
                 } else {
-                    OfflineLabEngine.generateVerdict(topic, conversationText)
+                    OfflineLabEngine.generateVerdict(topic, conversationText, _experienceLevel.value)
                 }
 
                 // Save to Room DB

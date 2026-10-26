@@ -3,8 +3,10 @@ package com.example.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,7 +32,8 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
@@ -63,18 +66,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.curriculum.CaSyllabusData
 import com.example.data.model.ChatMessage
+import com.example.data.model.ExperienceLevel
 import com.example.data.model.LabVerdict
 import com.example.data.model.MessageSender
 import com.example.data.model.PaperCode
 import com.example.data.model.SyllabusTopic
 import com.example.ui.components.FormattedText
-import androidx.compose.foundation.isSystemInDarkTheme
 import com.example.ui.theme.Amber500
 import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.FbLightText
@@ -92,11 +94,13 @@ import com.example.ui.viewmodel.CaLabViewModel
 fun TeachLabScreen(viewModel: CaLabViewModel) {
     val state by viewModel.teachState.collectAsState()
     val isOffline by viewModel.isOffline.collectAsState()
+    val experienceLevel by viewModel.experienceLevel.collectAsState()
     var inputQuery by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
     var showTopicPicker by remember { mutableStateOf(false) }
     var showBlueprintBottomSheet by remember { mutableStateOf(false) }
+    var isBrushUpExpanded by remember(state.selectedTopic?.id) { mutableStateOf(false) }
 
     LaunchedEffect(state.messages.size) {
         if (state.messages.isNotEmpty()) {
@@ -109,115 +113,337 @@ fun TeachLabScreen(viewModel: CaLabViewModel) {
             .fillMaxSize()
             .testTag("teach_lab_screen")
     ) {
-        // Paper selection row
-        LazyRow(
+        // STREAMLINED TOP TOPIC HEADER CARD
+        val activeTopic = state.selectedTopic
+        val activePaper = state.selectedPaper
+        val paperColor = Color(activePaper.colorHex)
+
+        val personaLabel = when (experienceLevel) {
+            ExperienceLevel.NOVICE -> "🟢 Supportive Senior (Hints + Lenient Rubric)"
+            ExperienceLevel.KNOWLEDGED -> "🔵 Curious Article Assistant (Provisos & Thresholds)"
+            ExperienceLevel.EXAM_READY -> "🔴 Strict ICAI Examiner (Exact Sections/AS & Limits Required)"
+        }
+        val personaColor = when (experienceLevel) {
+            ExperienceLevel.NOVICE -> SuccessGreen
+            ExperienceLevel.KNOWLEDGED -> Sky500
+            ExperienceLevel.EXAM_READY -> Amber500
+        }
+
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 16.dp, vertical = 6.dp)
+                .testTag("active_topic_card"),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+            ),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         ) {
-            item {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
-                    modifier = Modifier
-                        .clickable { showBlueprintBottomSheet = true }
-                        .testTag("teach_open_paper_blueprint_button")
+            Column(modifier = Modifier.padding(12.dp)) {
+                // Top metadata row: Paper Pill + Compact Persona Badge + Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = paperColor.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = activePaper.shortName,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = paperColor,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        // Compact Persona Badge
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = personaColor.copy(alpha = 0.12f),
+                            border = BorderStroke(0.8.dp, personaColor.copy(alpha = 0.4f))
+                        ) {
+                            Text(
+                                text = personaLabel,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = personaColor,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    // Action Icons: Strategy Blueprint & Reset Session
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        IconButton(
+                            onClick = { showBlueprintBottomSheet = true },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .testTag("teach_open_paper_blueprint_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                                contentDescription = "Paper Strategy Blueprint",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { activeTopic?.let { viewModel.resetTeachLabSession(it) } },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .testTag("reset_session_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Restart Session",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Active Topic Title Area (Click to open Topic Picker)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showTopicPicker = true }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(paperColor.copy(alpha = 0.18f)),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Filled.MenuBook,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
+                            imageVector = Icons.Default.School,
+                            contentDescription = "Topic",
+                            tint = paperColor,
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Paper Strategy Blueprint",
-                            fontSize = 12.sp,
+                            text = activeTopic?.topicName ?: "Select Topic to Teach",
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "${activeTopic?.chapter ?: "All Chapters"} • ${activeTopic?.moduleName ?: activePaper.title}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        modifier = Modifier.padding(start = 6.dp)
+                    ) {
+                        Text(
+                            text = "Change ▾",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
                 }
             }
-
-            items(PaperCode.entries, key = { it.name }) { paper ->
-                val selected = state.selectedPaper == paper
-                FilterChip(
-                    selected = selected,
-                    onClick = { viewModel.selectTeachPaper(paper) },
-                    label = { Text(paper.shortName, fontSize = 12.sp) },
-                    modifier = Modifier.testTag("paper_chip_${paper.name}"),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                )
-            }
         }
 
-        // Active Topic Header Card
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
-                .clickable { showTopicPicker = true }
-                .testTag("active_topic_card"),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            ),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Row(
+        // COLLAPSIBLE 30-SEC OFFLINE BRUSH-UP CARD
+        if (activeTopic != null) {
+            Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 16.dp, vertical = 2.dp)
+                    .testTag("brush_up_card"),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f))
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(Color(state.selectedPaper.colorHex).copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.School,
-                        contentDescription = "Topic",
-                        tint = Color(state.selectedPaper.colorHex),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = state.selectedPaper.title,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = state.selectedTopic?.topicName ?: "Select Topic to Teach",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
-                    )
-                }
-                IconButton(
-                    onClick = { state.selectedTopic?.let { viewModel.resetTeachLabSession(it) } },
-                    modifier = Modifier.testTag("reset_session_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Restart Session",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { isBrushUpExpanded = !isBrushUpExpanded }
+                            .padding(vertical = 2.dp)
+                            .testTag("brush_up_toggle"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "📖 30-Sec Offline Brush-Up",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = if (isBrushUpExpanded) "Hide" else "Review Limits",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Icon(
+                                imageVector = if (isBrushUpExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = if (isBrushUpExpanded) "Collapse" else "Expand",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    AnimatedVisibility(visible = isBrushUpExpanded) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            // Recent ICAI / Finance Act Amendment
+                            if (activeTopic.hasRecentAmendment && activeTopic.amendmentSummary.isNotBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = SuccessGreen.copy(alpha = 0.15f),
+                                    border = BorderStroke(1.dp, SuccessGreen.copy(alpha = 0.4f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Text(
+                                            text = "🚨",
+                                            fontSize = 12.sp,
+                                            modifier = Modifier.padding(end = 6.dp)
+                                        )
+                                        Column {
+                                            Text(
+                                                text = "Recent ICAI / Finance Act Amendment:",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = SuccessGreen
+                                            )
+                                            Text(
+                                                text = activeTopic.amendmentSummary,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                lineHeight = 15.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (activeTopic.keyProvisions.isNotEmpty()) {
+                                Text(
+                                    text = "Core Statutory Limits & Provisos:",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                activeTopic.keyProvisions.forEach { prov ->
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 1.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Text(
+                                            text = "•",
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(end = 6.dp)
+                                        )
+                                        Text(
+                                            text = prov,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            lineHeight = 16.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (activeTopic.commonExaminerPitfalls.isNotBlank()) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Amber500.copy(alpha = 0.12f),
+                                    border = BorderStroke(1.dp, Amber500.copy(alpha = 0.35f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 2.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Warning,
+                                            contentDescription = null,
+                                            tint = Amber500,
+                                            modifier = Modifier
+                                                .size(15.dp)
+                                                .padding(top = 2.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Column {
+                                            Text(
+                                                text = "Common Examiner Pitfall:",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Amber500
+                                            )
+                                            Text(
+                                                text = activeTopic.commonExaminerPitfalls,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                lineHeight = 15.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -258,38 +484,99 @@ fun TeachLabScreen(viewModel: CaLabViewModel) {
             }
         }
 
-        // Quick Feynman prompt suggestions
+        // QUICK CHIPS: OFFLINE NEED A HINT + GIVE VERDICT + SUGGESTIONS
         LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            // [💡 Need a Hint?] chip: Inserts targeted provision hint inline
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Amber500.copy(alpha = 0.18f),
+                    border = BorderStroke(1.dp, Amber500.copy(alpha = 0.6f)),
+                    modifier = Modifier
+                        .clickable {
+                            val currentTopic = state.selectedTopic
+                            if (currentTopic != null) {
+                                val lower = inputQuery.lowercase()
+                                val candidate = currentTopic.keyProvisions.firstOrNull { prov ->
+                                    val kw = prov.split(" ", ":", "-").filter { it.length > 3 }
+                                    kw.none { lower.contains(it.lowercase()) }
+                                } ?: currentTopic.keyProvisions.firstOrNull() ?: currentTopic.commonExaminerPitfalls
+
+                                val hintText = "Hint on ${currentTopic.topicName}: $candidate"
+                                inputQuery = if (inputQuery.isBlank()) hintText else "$inputQuery\n$hintText"
+                            }
+                        }
+                        .testTag("give_hint_chip")
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lightbulb,
+                            contentDescription = null,
+                            tint = Amber500,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "💡 Need a Hint?",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Amber500
+                        )
+                    }
+                }
+            }
+
+            // [⚖️ Give Verdict] chip
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                    modifier = Modifier
+                        .clickable { viewModel.generateAndShowVerdict() }
+                        .testTag("give_verdict_chip")
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "⚖️ Give Verdict",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+
             val suggestions = listOf(
                 "Ask me about provisos ⚖️",
                 "Test my limits & thresholds 🔢",
-                "What about exceptions? 🚨",
-                "Give Lab's Verdict 📊"
+                "What about exceptions? 🚨"
             )
             items(suggestions, key = { it }) { sugg ->
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = if (sugg.contains("Verdict")) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier
-                        .clickable {
-                            if (sugg.contains("Verdict")) {
-                                viewModel.generateAndShowVerdict()
-                            } else {
-                                viewModel.sendTeachMessage(sugg)
-                            }
-                        }
+                        .clickable { viewModel.sendTeachMessage(sugg) }
                         .testTag("sugg_${sugg.take(8)}")
                 ) {
                     Text(
                         text = sugg,
                         fontSize = 11.sp,
-                        fontWeight = if (sugg.contains("Verdict")) FontWeight.Bold else FontWeight.Medium,
-                        color = if (sugg.contains("Verdict")) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                     )
                 }
