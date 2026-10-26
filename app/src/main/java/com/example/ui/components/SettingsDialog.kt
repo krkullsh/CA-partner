@@ -15,6 +15,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.Button
@@ -43,6 +45,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.data.model.CatalogSortOrder
+import com.example.data.model.ExperienceLevel
 import com.example.ui.theme.Amber500
 import com.example.ui.theme.Sky500
 import com.example.ui.theme.SuccessGreen
@@ -60,6 +64,9 @@ fun SettingsDialog(
 
     val groqApiKey by viewModel.groqApiKey.collectAsState()
     val selectedAiProvider by viewModel.selectedAiProvider.collectAsState()
+
+    val experienceLevel by viewModel.experienceLevel.collectAsState()
+    val catalogSortOrder by viewModel.catalogSortOrder.collectAsState()
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -93,7 +100,107 @@ fun SettingsDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Online / Offline Toggle
+                // 1. Experience & Display Tone
+                Text("Experience & Display Tone", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    ExperienceLevel.entries.forEach { level ->
+                        FilterChip(
+                            selected = experienceLevel == level,
+                            onClick = { viewModel.setExperienceLevel(level) },
+                            label = {
+                                Text(
+                                    text = when (level) {
+                                        ExperienceLevel.NOVICE -> "Novice"
+                                        ExperienceLevel.KNOWLEDGED -> "Knowledged"
+                                        ExperienceLevel.EXAM_READY -> "Exam Ready"
+                                    },
+                                    fontSize = 12.sp,
+                                    fontWeight = if (experienceLevel == level) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = when (experienceLevel) {
+                            ExperienceLevel.NOVICE -> "☕ Novice: Everyday Kirana/Chai business analogies, gentle grading tone, and foundation concept building."
+                            ExperienceLevel.KNOWLEDGED -> "📊 Knowledged: Standard revision notes, statutory thresholds, provisos, and practical computation formats."
+                            ExperienceLevel.EXAM_READY -> "🏛️ Exam Ready: Strict ICAI provision-facts-conclusion format, aggressive trap detection, and exam marking rubrics."
+                        },
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 15.sp,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // 2. Catalogue Organization Toggle
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Sort,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Catalogue Organization",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = if (catalogSortOrder == CatalogSortOrder.OFFICIAL_ICAI)
+                                        "Official ICAI Chapter Chronology (Module 1, 2, 3)"
+                                    else
+                                        "Exam Priority Tier View (Tier 1 High-Yield first)",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = catalogSortOrder == CatalogSortOrder.PRIORITY_TIER,
+                            onCheckedChange = { isPriority ->
+                                viewModel.setCatalogSortOrder(
+                                    if (isPriority) CatalogSortOrder.PRIORITY_TIER else CatalogSortOrder.OFFICIAL_ICAI
+                                )
+                            },
+                            modifier = Modifier.testTag("catalogue_sort_switch")
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // 3. Online / Offline Toggle
                 Card(
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -148,7 +255,7 @@ fun SettingsDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Cloud AI Configuration
+                // 4. Cloud AI Configuration
                 Text("Cloud AI Configuration", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -159,12 +266,12 @@ fun SettingsDialog(
                 ) {
                     FilterChip(
                         selected = selectedAiProvider == "GEMINI",
-                       onClick = { viewModel.setAiProvider("GEMINI") },
+                        onClick = { viewModel.setAiProvider("GEMINI") },
                         label = { Text("Gemini") }
                     )
                     FilterChip(
                         selected = selectedAiProvider == "GROQ",
-                       onClick = { viewModel.setAiProvider("GROQ") },
+                        onClick = { viewModel.setAiProvider("GROQ") },
                         label = { Text("Groq (Llama 3.3 70B)") }
                     )
                 }
@@ -235,7 +342,7 @@ fun SettingsDialog(
                 HorizontalDivider()
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // About CA-Lab Philosophy
+                // Philosophy of CA-Lab
                 Text("Philosophy of CA-Lab", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(

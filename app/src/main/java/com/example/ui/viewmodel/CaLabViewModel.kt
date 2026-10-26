@@ -15,11 +15,14 @@ import com.example.data.local.CaLabDatabase
 import com.example.data.model.CatchLabScenario
 import com.example.data.model.ChatMessage
 import com.example.data.model.ConceptDifference
+import com.example.data.model.CatalogSortOrder
+import com.example.data.model.ExperienceLevel
 import com.example.data.model.ExplanationDepth
 import com.example.data.model.LabMode
 import com.example.data.model.LabVerdict
 import com.example.data.model.MessageSender
 import com.example.data.model.PaperCode
+import com.example.data.model.PriorityTier
 import com.example.data.model.SyllabusTopic
 import com.example.data.repository.StudyRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,7 +57,7 @@ data class CatchLabState(
 data class AskLabState(
     val selectedPaper: PaperCode = PaperCode.PAPER_1,
     val selectedTopic: SyllabusTopic? = CaSyllabusData.topics.firstOrNull(),
-    val selectedDepth: ExplanationDepth = ExplanationDepth.DEPTH_1,
+    val selectedDepth: ExplanationDepth = ExplanationDepth.DEPTH_2,
     val customQuery: String = "",
     val displayedContent: String = "",
     val isLoading: Boolean = false,
@@ -95,6 +98,29 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefs = application.getSharedPreferences("ca_lab_settings", android.content.Context.MODE_PRIVATE)
 
+    // Experience Level StateFlow backed by SharedPreferences
+    private val _experienceLevel = MutableStateFlow(
+        runCatching {
+            ExperienceLevel.valueOf(prefs.getString("experience_level", ExperienceLevel.KNOWLEDGED.name) ?: ExperienceLevel.KNOWLEDGED.name)
+        }.getOrDefault(ExperienceLevel.KNOWLEDGED)
+    )
+    val experienceLevel: StateFlow<ExperienceLevel> = _experienceLevel.asStateFlow()
+
+    // Catalogue Sort Order StateFlow backed by SharedPreferences
+    private val _catalogSortOrder = MutableStateFlow(
+        runCatching {
+            CatalogSortOrder.valueOf(prefs.getString("catalog_sort_order", CatalogSortOrder.OFFICIAL_ICAI.name) ?: CatalogSortOrder.OFFICIAL_ICAI.name)
+        }.getOrDefault(CatalogSortOrder.OFFICIAL_ICAI)
+    )
+    val catalogSortOrder: StateFlow<CatalogSortOrder> = _catalogSortOrder.asStateFlow()
+
+    // Unified Global Context for Sticky Study Context Pill
+    private val _activePaper = MutableStateFlow(PaperCode.PAPER_1)
+    val activePaper: StateFlow<PaperCode> = _activePaper.asStateFlow()
+
+    private val _activeTopic = MutableStateFlow(CaSyllabusData.topics.first())
+    val activeTopic: StateFlow<SyllabusTopic> = _activeTopic.asStateFlow()
+
     private val _groqApiKey = MutableStateFlow(prefs.getString("groq_api_key", "") ?: "")
     val groqApiKey: StateFlow<String> = _groqApiKey.asStateFlow()
 
@@ -109,6 +135,18 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
     fun setAiProvider(provider: String) {
         _selectedAiProvider.value = provider
         prefs.edit().putString("ai_provider", provider).apply()
+    }
+
+    fun setExperienceLevel(level: ExperienceLevel) {
+        _experienceLevel.value = level
+        prefs.edit().putString("experience_level", level.name).apply()
+        // Automatically sync default depth in AskLab
+        setAskDepth(level.defaultDepth)
+    }
+
+    fun setCatalogSortOrder(order: CatalogSortOrder) {
+        _catalogSortOrder.value = order
+        prefs.edit().putString("catalog_sort_order", order.name).apply()
     }
 
     val repository = StudyRepository(
@@ -137,7 +175,7 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
     )
     val catchState: StateFlow<CatchLabState> = _catchState.asStateFlow()
 
-    private val _askState = MutableStateFlow(AskLabState())
+    private val _askState = MutableStateFlow(AskLabState(selectedDepth = _experienceLevel.value.defaultDepth))
     val askState: StateFlow<AskLabState> = _askState.asStateFlow()
 
     private val _diffState = MutableStateFlow(SpotDifferenceState())
@@ -184,10 +222,108 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
-        // Initialize Teach Lab with welcome greeting
+        _askState.value = _askState.value.copy(selectedDepth = _experienceLevel.value.defaultDepth)
         resetTeachLabSession(_teachState.value.selectedTopic)
         updateAskLabContent()
         selectMcqTestPaper(PaperCode.PAPER_1)
+    }
+
+    // -------------------------------------------------------------
+    // SORTED TOPICS & STICKY STUDY CONTEXT SYNC
+    // -------------------------------------------------------------
+    fun getSortedTopicsForPaper(paper: PaperCode): List<SyllabusTopic> {
+        val topics = repository.getTopicsForPaper(paper)
+        return when (_catalogSortOrder.value) {
+            CatalogSortOrder.OFFICIAL_ICAI -> topics.sortedWith(
+                compareBy<SyllabusTopic> { it.icaiChapterNumber }.thenBy { it.topicName }
+            )
+            CatalogSortOrder.PRIORITY_TIER -> topics.sortedWith(
+                compareBy<SyllabusTopic> { it.priorityTier.ordinal }.thenBy { it.icaiChapterNumber }
+            )
+        }
+    }
+
+    fun setActivePaper(paper: PaperCode) {
+        _activePaper.value = paper
+        val sortedTopics = getSortedTopicsForPaper(paper)
+        val selectedTopic = sortedTopics.firstOrNull() ?: CaSyllabusData.topics.first()
+        _activeTopic.value = selectedTopic
+
+        // 1. Sync Teach Lab
+        _teachState.value = _teachState.value.copy(
+            selectedPaper = paper,
+            selectedTopic = selectedTopic
+        )
+        resetTeachLabSession(selectedTopic)
+
+        // 2. Sync Catch Lab
+        val paperScenarios = CuratedCatchLabScenarios.scenarios.filter { it.paper == paper }
+        _catchState.value = _catchState.value.copy(
+            selectedPaper = paper,
+            scenarios = if (paperScenarios.isNotEmpty()) paperScenarios else CuratedCatchLabScenarios.scenarios,
+            activeScenarioIndex = 0,
+            userSpottingInput = "",
+            isRevealed = false,
+            scoreFeedback = null
+        )
+
+        // 3. Sync Ask Lab
+        _askState.value = _askState.value.copy(
+            selectedPaper = paper,
+            selectedTopic = selectedTopic
+        )
+        updateAskLabContent()
+
+        // 4. Sync Spot Difference
+        val diffs = repository.getDifferencesForPaper(paper)
+        _diffState.value = _diffState.value.copy(
+            selectedPaper = paper,
+            selectedDifference = diffs.firstOrNull()
+        )
+
+        // 5. Sync MCQ Test Paper
+        selectMcqTestPaper(paper)
+    }
+
+    fun setActiveTopic(topic: SyllabusTopic) {
+        _activeTopic.value = topic
+        _activePaper.value = topic.paper
+
+        // 1. Sync Teach Lab
+        _teachState.value = _teachState.value.copy(
+            selectedPaper = topic.paper,
+            selectedTopic = topic
+        )
+        resetTeachLabSession(topic)
+
+        // 2. Sync Catch Lab
+        val paperScenarios = CuratedCatchLabScenarios.scenarios.filter { it.paper == topic.paper }
+        val scenarioList = if (paperScenarios.isNotEmpty()) paperScenarios else CuratedCatchLabScenarios.scenarios
+        val matchIndex = scenarioList.indexOfFirst {
+            it.topic.contains(topic.topicName, ignoreCase = true) || topic.topicName.contains(it.topic, ignoreCase = true)
+        }
+        _catchState.value = _catchState.value.copy(
+            selectedPaper = topic.paper,
+            scenarios = scenarioList,
+            activeScenarioIndex = if (matchIndex >= 0) matchIndex else 0,
+            userSpottingInput = "",
+            isRevealed = false,
+            scoreFeedback = null
+        )
+
+        // 3. Sync Ask Lab
+        _askState.value = _askState.value.copy(
+            selectedPaper = topic.paper,
+            selectedTopic = topic
+        )
+        updateAskLabContent()
+
+        // 4. Sync Spot Difference
+        val diffs = repository.getDifferencesForPaper(topic.paper)
+        _diffState.value = _diffState.value.copy(
+            selectedPaper = topic.paper,
+            selectedDifference = diffs.firstOrNull()
+        )
     }
 
     // -------------------------------------------------------------
@@ -350,21 +486,11 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
     // TEACH LAB MODE
     // -------------------------------------------------------------
     fun selectTeachPaper(paper: PaperCode) {
-        val topics = repository.getTopicsForPaper(paper)
-        val firstTopic = topics.firstOrNull()
-        _teachState.value = _teachState.value.copy(
-            selectedPaper = paper,
-            selectedTopic = firstTopic
-        )
-        resetTeachLabSession(firstTopic)
+        setActivePaper(paper)
     }
 
     fun selectTeachTopic(topic: SyllabusTopic) {
-        _teachState.value = _teachState.value.copy(
-            selectedPaper = topic.paper,
-            selectedTopic = topic
-        )
-        resetTeachLabSession(topic)
+        setActiveTopic(topic)
     }
 
     fun resetTeachLabSession(topic: SyllabusTopic?) {
@@ -450,40 +576,36 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val topic = _teachState.value.selectedTopic ?: CaSyllabusData.topics.first()
-                val allUserWords = _teachState.value.messages
-                    .filter { it.sender == MessageSender.USER }
-                    .joinToString("\n") { it.text }
+                val messages = _teachState.value.messages
+                val conversationText = messages.joinToString("\n") { "${it.sender.name}: ${it.text}" }
 
                 val verdict = if (!_isOffline.value && repository.hasValidGeminiKey()) {
-                    val aiResult = repository.generateAiVerdict(topic, allUserWords)
-                    aiResult.getOrElse {
-                        OfflineLabEngine.generateVerdict(topic, allUserWords)
-                    }
+                    val result = repository.generateAiVerdict(topic, conversationText)
+                    if (result.isSuccess) result.getOrThrow() else OfflineLabEngine.generateVerdict(topic, conversationText)
                 } else {
-                    OfflineLabEngine.generateVerdict(topic, allUserWords)
+                    OfflineLabEngine.generateVerdict(topic, conversationText)
                 }
 
                 // Save to Room DB
-                repository.saveVerdict(verdict)
-                repository.recordOralRecall(topic.id)
-                loadVerdictsDashboard()
+                val savedId = repository.saveVerdict(verdict)
+                val finalVerdict = verdict.copy(id = savedId)
 
+                // Add to Chat as special verdict item
                 val currentMessages = _teachState.value.messages.toMutableList()
                 currentMessages.add(
                     ChatMessage(
                         sender = MessageSender.LAB,
-                        text = "📊 **Lab's Verdict has been prepared!** You scored ${verdict.masteryScore}/100 on ${verdict.topicName}. Check the detailed breakdown below.",
+                        text = "🏆 Mastery Verdict: ${finalVerdict.masteryScore}/100. Check detailed analysis card!",
                         isVerdict = true,
-                        verdict = verdict
+                        verdict = finalVerdict
                     )
                 )
 
-                val bounded = if (currentMessages.size > 50) currentMessages.takeLast(50) else currentMessages
                 _teachState.value = _teachState.value.copy(
-                    messages = bounded,
-                    isAiThinking = false,
-                    latestVerdict = verdict,
-                    isVerdictModalVisible = true
+                    messages = currentMessages,
+                    latestVerdict = finalVerdict,
+                    isVerdictModalVisible = true,
+                    isAiThinking = false
                 )
             } catch (e: Exception) {
                 _teachState.value = _teachState.value.copy(isAiThinking = false)
@@ -496,23 +618,42 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // -------------------------------------------------------------
-    // CATCH LAB OUT MODE (Trick Mode)
+    // CATCH LAB OUT MODE (Trap Spotting)
     // -------------------------------------------------------------
     fun selectCatchPaper(paper: PaperCode) {
-        val scenarios = repository.getScenariosForPaper(paper)
+        setActivePaper(paper)
+    }
+
+    fun setCatchScenarioIndex(index: Int) {
+        val total = _catchState.value.scenarios.size
+        if (index in 0 until total) {
+            _catchState.value = _catchState.value.copy(
+                activeScenarioIndex = index,
+                userSpottingInput = "",
+                isRevealed = false,
+                scoreFeedback = null
+            )
+        }
+    }
+
+    fun nextCatchScenario() {
+        val total = _catchState.value.scenarios.size
+        if (total == 0) return
+        val next = (_catchState.value.activeScenarioIndex + 1) % total
         _catchState.value = _catchState.value.copy(
-            selectedPaper = paper,
-            scenarios = if (scenarios.isNotEmpty()) scenarios else repository.getAllScenarios(),
-            activeScenarioIndex = 0,
+            activeScenarioIndex = next,
             userSpottingInput = "",
             isRevealed = false,
             scoreFeedback = null
         )
     }
 
-    fun setCatchScenarioIndex(index: Int) {
+    fun previousCatchScenario() {
+        val total = _catchState.value.scenarios.size
+        if (total == 0) return
+        val prev = if (_catchState.value.activeScenarioIndex - 1 < 0) total - 1 else _catchState.value.activeScenarioIndex - 1
         _catchState.value = _catchState.value.copy(
-            activeScenarioIndex = index,
+            activeScenarioIndex = prev,
             userSpottingInput = "",
             isRevealed = false,
             scoreFeedback = null
@@ -555,20 +696,11 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
     // ASK LAB MODE (3-Tier Depth)
     // -------------------------------------------------------------
     fun selectAskPaper(paper: PaperCode) {
-        val topics = repository.getTopicsForPaper(paper)
-        _askState.value = _askState.value.copy(
-            selectedPaper = paper,
-            selectedTopic = topics.firstOrNull()
-        )
-        updateAskLabContent()
+        setActivePaper(paper)
     }
 
     fun selectAskTopic(topic: SyllabusTopic) {
-        _askState.value = _askState.value.copy(
-            selectedPaper = topic.paper,
-            selectedTopic = topic
-        )
-        updateAskLabContent()
+        setActiveTopic(topic)
     }
 
     fun setAskDepth(depth: ExplanationDepth) {
@@ -612,11 +744,7 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         if (matchedTopic != null) {
-            _askState.value = _askState.value.copy(
-                selectedPaper = matchedTopic.paper,
-                selectedTopic = matchedTopic
-            )
-            updateAskLabContent()
+            setActiveTopic(matchedTopic)
             return
         }
 

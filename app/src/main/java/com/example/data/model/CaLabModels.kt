@@ -1,17 +1,27 @@
 package com.example.data.model
 
+enum class SubjectArchetype {
+    STANDARDS_AND_ACCOUNTS,
+    STATUTE_AND_CASE_LAW,
+    TAX_AMENDMENTS_AND_COMPUTATION,
+    FORMULAS_AND_PROFORMA,
+    AUDIT_PROCEDURES_AND_CLAUSES,
+    STRATEGIC_FRAMEWORKS
+}
+
 enum class PaperCode(
     val code: String,
     val title: String,
     val shortName: String,
-    val colorHex: Long
+    val colorHex: Long,
+    val archetype: SubjectArchetype = SubjectArchetype.STANDARDS_AND_ACCOUNTS
 ) {
-    PAPER_1("Paper 1", "Advanced Accounting", "Adv. Accounts", 0xFF0284C7),
-    PAPER_2("Paper 2", "Corporate and Other Laws", "Law", 0xFF8B5CF6),
-    PAPER_3("Paper 3", "Taxation (Direct Tax & GST)", "Taxation", 0xFFD97706),
-    PAPER_4("Paper 4", "Cost and Management Accounting", "Costing (CMA)", 0xFF10B981),
-    PAPER_5("Paper 5", "Auditing and Ethics", "Audit & Ethics", 0xFFEF4444),
-    PAPER_6("Paper 6", "Financial & Strategic Management", "FM & SM", 0xFF06B6D4);
+    PAPER_1("Paper 1", "Advanced Accounting", "Adv. Accounts", 0xFF0284C7, SubjectArchetype.STANDARDS_AND_ACCOUNTS),
+    PAPER_2("Paper 2", "Corporate and Other Laws", "Law", 0xFF8B5CF6, SubjectArchetype.STATUTE_AND_CASE_LAW),
+    PAPER_3("Paper 3", "Taxation (Direct Tax & GST)", "Taxation", 0xFFD97706, SubjectArchetype.TAX_AMENDMENTS_AND_COMPUTATION),
+    PAPER_4("Paper 4", "Cost and Management Accounting", "Costing (CMA)", 0xFF10B981, SubjectArchetype.FORMULAS_AND_PROFORMA),
+    PAPER_5("Paper 5", "Auditing and Ethics", "Audit & Ethics", 0xFFEF4444, SubjectArchetype.AUDIT_PROCEDURES_AND_CLAUSES),
+    PAPER_6("Paper 6", "Financial & Strategic Management", "FM & SM", 0xFF06B6D4, SubjectArchetype.STRATEGIC_FRAMEWORKS);
 
     companion object {
         fun fromCode(code: String): PaperCode {
@@ -19,6 +29,17 @@ enum class PaperCode(
                 ?: PAPER_1
         }
     }
+}
+
+enum class ExperienceLevel(val label: String, val defaultDepth: ExplanationDepth) {
+    NOVICE("Novice (First Read)", ExplanationDepth.DEPTH_1),
+    KNOWLEDGED("Knowledged (Revision)", ExplanationDepth.DEPTH_2),
+    EXAM_READY("Exam Ready (Final Polish)", ExplanationDepth.DEPTH_3)
+}
+
+enum class CatalogSortOrder(val label: String) {
+    OFFICIAL_ICAI("Official ICAI Module & Chapter Order"),
+    PRIORITY_TIER("Exam Priority Tier (Tier 1–4)")
 }
 
 enum class LabMode(val displayName: String, val badge: String, val iconName: String) {
@@ -74,6 +95,13 @@ data class StandardBlueprint(
     val disclosure: String
 )
 
+data class TeacherSection(
+    val id: String,
+    val heading: String,
+    val bodyMarkdown: String,
+    val linkedTrapScenarioId: String? = null
+)
+
 data class SyllabusTopic(
     val id: String,
     val paper: PaperCode,
@@ -91,7 +119,11 @@ data class SyllabusTopic(
     val oralRhythmNote: String = "Recall key provisions every 3rd day",
     val fusedWithTopics: List<String> = emptyList(),
     val keyProvisions: List<String>,
-    val commonExaminerPitfalls: String
+    val commonExaminerPitfalls: String,
+    val icaiChapterNumber: Int = 1,
+    val hasRecentAmendment: Boolean = false,
+    val amendmentSummary: String = "",
+    val teacherSections: List<TeacherSection> = emptyList()
 )
 
 data class CatchLabScenario(
@@ -168,4 +200,3 @@ data class McqQuestion(
     val explanation: String,
     val icaiProvisionRef: String
 )
-

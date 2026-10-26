@@ -10,6 +10,8 @@ import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.model.LabVerdict
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONArray
@@ -85,7 +87,9 @@ data class TopicProgressEntity(
     val mcqAttempted: Int = 0,
     val mcqCorrect: Int = 0,
     val oralRecallsCompleted: Int = 0,
-    val lastRevisedAt: Long = 0L
+    val lastRevisedAt: Long = 0L,
+    val teacherReadCompleted: Int = 0,
+    val swipeDrillStatus: Int = 0 // 0 = Unseen, 1 = Need Practice / Left Swipe, 2 = Mastered / Right Swipe
 )
 
 @Entity(tableName = "error_log")
@@ -227,6 +231,12 @@ interface StudyDao {
     @Query("UPDATE topic_progress SET mcqAttempted = mcqAttempted + :attempted, mcqCorrect = mcqCorrect + :correct, lastRevisedAt = :timestamp WHERE topicId = :topicId")
     suspend fun recordMcqResult(topicId: String, attempted: Int, correct: Int, timestamp: Long = System.currentTimeMillis())
 
+    @Query("UPDATE topic_progress SET teacherReadCompleted = :completed, lastRevisedAt = :timestamp WHERE topicId = :topicId")
+    suspend fun updateTeacherReadStatus(topicId: String, completed: Int, timestamp: Long = System.currentTimeMillis())
+
+    @Query("UPDATE topic_progress SET swipeDrillStatus = :status, lastRevisedAt = :timestamp WHERE topicId = :topicId")
+    suspend fun updateSwipeDrillStatus(topicId: String, status: Int, timestamp: Long = System.currentTimeMillis())
+
     // Error Log tracking
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertErrorLog(errorLog: ErrorLogEntity): Long
@@ -251,7 +261,24 @@ interface StudyDao {
     suspend fun getCustomDifferencesList(): List<CustomDifferenceEntity>
 }
 
-@Database(entities = [VerdictEntity::class, BookmarkEntity::class, TopicProgressEntity::class, ErrorLogEntity::class, CustomDifferenceEntity::class], version = 4, exportSchema = false)
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE topic_progress ADD COLUMN teacherReadCompleted INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE topic_progress ADD COLUMN swipeDrillStatus INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+@Database(
+    entities = [
+        VerdictEntity::class,
+        BookmarkEntity::class,
+        TopicProgressEntity::class,
+        ErrorLogEntity::class,
+        CustomDifferenceEntity::class
+    ],
+    version = 5,
+    exportSchema = false
+)
 abstract class CaLabDatabase : RoomDatabase() {
     abstract fun studyDao(): StudyDao
 
@@ -266,6 +293,7 @@ abstract class CaLabDatabase : RoomDatabase() {
                     CaLabDatabase::class.java,
                     "ca_lab_database.db"
                 )
+                .addMigrations(MIGRATION_4_5)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 INSTANCE = instance
