@@ -298,4 +298,28 @@ object StrategyBlueprintReader {
             """.trimIndent()
         }
     }
+
+    fun getBlueprintExcerptForTopic(context: Context, topic: com.example.data.model.SyllabusTopic): String? {
+        val markdown = getBlueprintMarkdown(context, topic.paper)
+        val lines = markdown.lines()
+        val searchTerms = listOf(
+            topic.topicName.lowercase(),
+            topic.chapter.lowercase(),
+            topic.topicName.split(" ").firstOrNull()?.lowercase() ?: ""
+        ).filter { it.length >= 3 }
+
+        for (i in lines.indices) {
+            val line = lines[i]
+            val lower = line.lowercase()
+            if (searchTerms.any { lower.contains(it) }) {
+                val chunk = lines.subList(i, (i + 4).coerceAtMost(lines.size))
+                    .joinToString("\n")
+                    .trim()
+                if (chunk.isNotBlank()) {
+                    return chunk
+                }
+            }
+        }
+        return null
+    }
 }

@@ -1,10 +1,15 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,17 +34,25 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CompareArrows
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Quiz
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -48,6 +62,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -58,42 +73,56 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.curriculum.CaSyllabusData
 import com.example.data.curriculum.CuratedDifferences
 import com.example.data.curriculum.StrategyBlueprintReader
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import com.example.data.model.ComparisonRow
 import com.example.data.model.ConceptDifference
+import com.example.data.model.ExperienceLevel
 import com.example.data.model.PaperCode
 import com.example.data.model.StatutoryCheatMatrix
+import com.example.data.model.StatutoryMatrixRow
 import com.example.data.model.SyllabusTopic
 import com.example.ui.theme.Amber500
 import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.Sky500
+import com.example.ui.theme.SuccessGreen
 import com.example.ui.viewmodel.CaLabViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 @Composable
 fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
     val state by viewModel.diffState.collectAsState()
     val bookmarkedIds by viewModel.bookmarkedIds.collectAsState()
     val customDiffs by viewModel.customDifferences.collectAsState()
+    val expLevel by viewModel.experienceLevel.collectAsState()
+    val progressMap by viewModel.topicProgressMap.collectAsState()
 
     // Combine curated and persistent custom differences
     val allDifferences = remember(customDiffs) {
@@ -107,9 +136,17 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
         }
     }
 
-    var modeSubTab by remember { mutableIntStateOf(0) } // 0 = Concept vs Concept (30+), 1 = Statutory Cheat Matrices
-    var activeMatrixPaper by remember { mutableStateOf(PaperCode.PAPER_1) }
+    var modeSubTab by remember { mutableIntStateOf(0) } // 0 = Concept vs Concept, 1 = Statutory Cheat Matrices & Swipe Drill
+    var activeMatrixPaper by remember { mutableStateOf(state.selectedPaper ?: PaperCode.PAPER_1) }
     var matrixSearchQuery by remember { mutableStateOf("") }
+
+    // Sub-Mode A: Tap-to-Recall Mode (auto-enabled when KNOWLEDGED or EXAM_READY)
+    var tapToRecallMode by remember {
+        mutableStateOf(expLevel == ExperienceLevel.KNOWLEDGED || expLevel == ExperienceLevel.EXAM_READY)
+    }
+
+    // Sub-Mode B: Swipe Drill vs Table view toggle
+    var isSwipeDrillActive by remember { mutableStateOf(false) }
 
     // Collapsible Topic Comparison State
     var isTopicComparisonExpanded by remember { mutableStateOf(false) }
@@ -141,7 +178,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
     ) {
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Mode Selector: Concept vs Concept (30+) vs Statutory Cheat Matrices
+        // Main Tab Row: Concept vs Concept vs Statutory Cheat Matrices
         Card(
             shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -171,7 +208,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp), tint = Amber500)
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Excel Cheat Matrices", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (modeSubTab == 1) Amber500 else MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Excel Matrix & Drill", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (modeSubTab == 1) Amber500 else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     },
                     modifier = Modifier.testTag("subtab_statutory_matrices")
@@ -182,7 +219,9 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
         Spacer(modifier = Modifier.height(10.dp))
 
         if (modeSubTab == 0) {
-            // MODE 0: CONCEPT VS CONCEPT (30+ HIGH-YIELD COMPARISONS)
+            // -------------------------------------------------------------
+            // SUB-MODE A: CONCEPT VS CONCEPT (BASIS-FIRST STACKED CARDS)
+            // -------------------------------------------------------------
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -233,6 +272,53 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                     }
                 }
 
+                // Tap-to-Recall Mode Toggle Bar
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (tapToRecallMode) Icons.Default.Lock else Icons.Default.Visibility,
+                                    contentDescription = null,
+                                    tint = if (tapToRecallMode) Amber500 else Sky500,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("Tap-to-Recall Active Memory", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        if (expLevel == ExperienceLevel.KNOWLEDGED || expLevel == ExperienceLevel.EXAM_READY) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = Amber500.copy(alpha = 0.15f)
+                                            ) {
+                                                Text("Auto-On", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Amber500, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                            }
+                                        }
+                                    }
+                                    Text("Mask Concept B to test distinction before revealing", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Switch(
+                                checked = tapToRecallMode,
+                                onCheckedChange = { tapToRecallMode = it },
+                                modifier = Modifier.testTag("tap_to_recall_switch")
+                            )
+                        }
+                    }
+                }
+
                 // Collapsible "Compare Any 2 Syllabus Topics (AI)" Card
                 item {
                     Card(
@@ -256,7 +342,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column {
                                         Text("Compare Any 2 Syllabus Topics (AI)", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                        Text("Pick two chapters or standards for an instant 3-column matrix", fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
+                                        Text("Pick two chapters or standards for an instant stacked comparison", fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
                                     }
                                 }
                                 Icon(
@@ -275,7 +361,6 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        // Topic A Picker
                                         Box(modifier = Modifier.weight(1f)) {
                                             TopicDropdownPicker(
                                                 label = "Topic A",
@@ -286,7 +371,6 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                                             )
                                         }
 
-                                        // Topic B Picker
                                         Box(modifier = Modifier.weight(1f)) {
                                             TopicDropdownPicker(
                                                 label = "Topic B",
@@ -329,20 +413,25 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                     }
                 }
 
-                // Search bar with Compare with AI button
+                // Search Bar
                 item {
                     OutlinedTextField(
                         value = state.searchQuery,
                         onValueChange = { viewModel.setDiffSearch(it) },
-                        placeholder = { Text("Search comparisons or type custom concepts...", fontSize = 12.sp) },
-                        modifier = Modifier.fillMaxWidth().testTag("diff_search_field"),
+                        placeholder = { Text("Search comparisons (e.g. AS 2 vs AS 10, Sec 68 vs 77)...", fontSize = 12.sp) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("diff_search_field"),
                         shape = RoundedCornerShape(20.dp),
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         trailingIcon = {
                             if (state.searchQuery.isNotBlank()) {
                                 Button(
                                     onClick = { viewModel.generateAiDifference(state.searchQuery) },
-                                    modifier = Modifier.padding(end = 4.dp).height(36.dp).testTag("compare_with_ai_button"),
+                                    modifier = Modifier
+                                        .padding(end = 4.dp)
+                                        .height(36.dp)
+                                        .testTag("compare_with_ai_button"),
                                     contentPadding = PaddingValues(horizontal = 8.dp),
                                     shape = RoundedCornerShape(14.dp)
                                 ) {
@@ -385,7 +474,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                     }
                 }
 
-                // Horizontal scrollable comparison cards row
+                // Horizontal scrollable comparison selection cards
                 item {
                     LazyRow(
                         modifier = Modifier.fillMaxWidth(),
@@ -418,36 +507,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                     }
                 }
 
-                // Self-quiz toggle card
-                item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Quiz, contentDescription = null, tint = Sky500, modifier = Modifier.size(20.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text("Self-Quiz Mode", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                    Text("Hide differences to test yourself first", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                            Switch(
-                                checked = state.isSelfQuizMode,
-                                onCheckedChange = { viewModel.toggleSelfQuizMode() },
-                                modifier = Modifier.testTag("self_quiz_switch")
-                            )
-                        }
-                    }
-                }
-
-                // Main Comparison Matrix
+                // Selected Comparison Details & Stacked Cards
                 if (currentDiff != null) {
                     // Memory Hook Banner
                     item {
@@ -496,7 +556,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                         }
                     }
 
-                    // Comparison Header Card
+                    // Comparison Header Banner Card
                     item {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -521,7 +581,9 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                                         onClick = {
                                             viewModel.toggleBookmark(currentDiff.id, "DIFFERENCE", currentDiff.title, currentDiff.paper.title)
                                         },
-                                        modifier = Modifier.size(24.dp).testTag("bookmark_diff_button")
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .testTag("bookmark_diff_button")
                                     ) {
                                         Icon(
                                             imageVector = if (isDiffBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
@@ -532,75 +594,75 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
 
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = currentDiff.conceptA,
-                                        fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Sky500.copy(alpha = 0.2f),
                                         modifier = Modifier.weight(1f)
-                                    )
+                                    ) {
+                                        Text(
+                                            text = currentDiff.conceptA,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 12.sp,
+                                            color = Sky500,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                        )
+                                    }
+
                                     Box(
-                                        modifier = Modifier.size(28.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+                                        modifier = Modifier
+                                            .padding(horizontal = 8.dp)
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primary),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text("VS", fontWeight = FontWeight.ExtraBold, fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimary)
                                     }
-                                    Text(
-                                        text = currentDiff.conceptB,
-                                        fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.weight(1f),
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.End
-                                    )
+
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Amber500.copy(alpha = 0.2f),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = currentDiff.conceptB,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 12.sp,
+                                            color = Amber500,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // Excel-Style 3-Column Table Header
-                    item {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Basis of Difference", fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                Text(currentDiff.conceptA, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, modifier = Modifier.weight(1.2f), color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                Text(currentDiff.conceptB, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, modifier = Modifier.weight(1.2f), color = MaterialTheme.colorScheme.onPrimaryContainer)
-                            }
-                        }
-                    }
-
-                    // Comparison Rows
-                    items(currentDiff.comparisonPoints.indices.toList(), key = { it }) { index ->
+                    // Stacked "Basis-First" Comparison Cards
+                    items(currentDiff.comparisonPoints.indices.toList(), key = { "basis_$it" }) { index ->
                         val row = currentDiff.comparisonPoints[index]
-                        val isRevealed = !state.isSelfQuizMode || state.revealedColumns.contains(index)
-                        ComparisonRowCard(
+                        BasisFirstStackedCard(
+                            index = index + 1,
                             row = row,
-                            isQuizMode = state.isSelfQuizMode,
-                            isRevealed = isRevealed,
-                            onReveal = { viewModel.revealQuizRow(index) }
+                            conceptAName = currentDiff.conceptA,
+                            conceptBName = currentDiff.conceptB,
+                            isTapToRecall = tapToRecallMode
                         )
                     }
                 }
             }
         } else {
-            // MODE 1: STATUTORY CHEAT MATRICES (EXCEL-STYLE)
+            // -------------------------------------------------------------
+            // SUB-MODE B: STATUTORY CHEAT MATRICES & TINDER SWIPE DRILL
+            // -------------------------------------------------------------
             val context = LocalContext.current
             var selectedMatrixCategory by remember { mutableStateOf("All Rows") }
             val matrixCategories = remember { listOf("All Rows", "Statutory Limits", "Blueprint Tables", "Syllabus & Quotas") }
@@ -619,87 +681,147 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Paper Selection Chips
+                // Top Action Row: Paper Picker & [🔥 Swipe Drill] Mode Toggle Button
                 item {
-                    LazyRow(
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        items(PaperCode.entries, key = { it.name }) { paper ->
-                            val isSelected = activeMatrixPaper == paper
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { activeMatrixPaper = paper },
-                                label = { Text(paper.shortName, fontSize = 12.sp) },
-                                modifier = Modifier.testTag("matrix_paper_${paper.name}"),
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Amber500.copy(alpha = 0.2f),
-                                    selectedLabelColor = Amber500
-                                )
-                            )
-                        }
-                    }
-                }
-
-                // Category Filter Chips (All Rows, Statutory Limits, Blueprint Tables, Syllabus & Quotas)
-                item {
-                    LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        items(matrixCategories) { cat ->
-                            val isSelected = selectedMatrixCategory == cat
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { selectedMatrixCategory = cat },
-                                label = {
-                                    Text(
-                                        text = cat,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        LazyRow(
+                            modifier = Modifier.weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(PaperCode.entries, key = { it.name }) { paper ->
+                                val isSelected = activeMatrixPaper == paper
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { activeMatrixPaper = paper },
+                                    label = { Text(paper.shortName, fontSize = 11.sp) },
+                                    modifier = Modifier.testTag("matrix_paper_${paper.name}"),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = Amber500.copy(alpha = 0.2f),
+                                        selectedLabelColor = Amber500
                                     )
-                                },
-                                modifier = Modifier.testTag("matrix_cat_${cat.replace(" ", "_").lowercase()}"),
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        // Swipe Drill Toggle Button
+                        Button(
+                            onClick = { isSwipeDrillActive = !isSwipeDrillActive },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isSwipeDrillActive) Amber500 else MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = if (isSwipeDrillActive) Color.Black else MaterialTheme.colorScheme.onPrimaryContainer
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("toggle_swipe_drill_button")
+                        ) {
+                            Icon(
+                                imageVector = if (isSwipeDrillActive) Icons.Default.TableChart else Icons.Default.Whatshot,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = if (isSwipeDrillActive) Color.Black else Amber500
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isSwipeDrillActive) "Excel Sheet" else "🔥 Swipe Drill",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 11.sp
                             )
                         }
                     }
                 }
 
-                // Matrix Search Filter
-                item {
-                    OutlinedTextField(
-                        value = matrixSearchQuery,
-                        onValueChange = { matrixSearchQuery = it },
-                        placeholder = { Text("Filter matrix by Section, Limit, Penalty, or Rule...", fontSize = 12.sp) },
-                        modifier = Modifier.fillMaxWidth().testTag("matrix_search_field"),
-                        shape = RoundedCornerShape(20.dp),
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        trailingIcon = {
-                            if (matrixSearchQuery.isNotBlank()) {
-                                IconButton(onClick = { matrixSearchQuery = "" }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp))
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Amber500,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                        )
-                    )
-                }
-
-                if (matrix != null) {
+                if (isSwipeDrillActive) {
+                    // SWIPE DRILL VIEW: Tinder-style Card Stack
                     item {
-                        StatutoryCheatMatrixCard(
-                            matrix = matrix,
-                            filterQuery = matrixSearchQuery,
-                            selectedCategory = selectedMatrixCategory
+                        val drillTopics = remember(activeMatrixPaper) {
+                            CaSyllabusData.getTopicsForPaper(activeMatrixPaper)
+                        }
+                        val drillRows = remember(matrix) {
+                            matrix?.rows?.take(20) ?: emptyList()
+                        }
+
+                        TinderSwipeDrillSection(
+                            paper = activeMatrixPaper,
+                            topics = drillTopics,
+                            matrixRows = drillRows,
+                            progressMap = progressMap,
+                            onSwipeMastered = { topicId ->
+                                viewModel.recordSwipeDrillStatus(topicId, 2)
+                            },
+                            onSwipeNeedPractice = { topicId ->
+                                viewModel.recordSwipeDrillStatus(topicId, 1)
+                            }
                         )
+                    }
+                } else {
+                    // EXCEL MATRIX VIEW: 1-Column Progressive Memory Expand
+                    item {
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(matrixCategories) { cat ->
+                                val isSelected = selectedMatrixCategory == cat
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { selectedMatrixCategory = cat },
+                                    label = {
+                                        Text(
+                                            text = cat,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    modifier = Modifier.testTag("matrix_cat_${cat.replace(" ", "_").lowercase()}"),
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    // Search Field
+                    item {
+                        OutlinedTextField(
+                            value = matrixSearchQuery,
+                            onValueChange = { matrixSearchQuery = it },
+                            placeholder = { Text("Filter matrix by Section, Limit, Penalty, or Rule...", fontSize = 12.sp) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("matrix_search_field"),
+                            shape = RoundedCornerShape(20.dp),
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            trailingIcon = {
+                                if (matrixSearchQuery.isNotBlank()) {
+                                    IconButton(onClick = { matrixSearchQuery = "" }) {
+                                        Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Amber500,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                            )
+                        )
+                    }
+
+                    if (matrix != null) {
+                        item {
+                            ProgressiveMemoryMatrixCard(
+                                matrix = matrix,
+                                filterQuery = matrixSearchQuery,
+                                selectedCategory = selectedMatrixCategory
+                            )
+                        }
                     }
                 }
             }
@@ -707,6 +829,912 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
     }
 }
 
+// =========================================================================
+// SUB-MODE A: "BASIS-FIRST" STACKED CARD COMPONENT
+// =========================================================================
+@Composable
+fun BasisFirstStackedCard(
+    index: Int,
+    row: ComparisonRow,
+    conceptAName: String,
+    conceptBName: String,
+    isTapToRecall: Boolean
+) {
+    var isRevealed by remember(row, isTapToRecall) { mutableStateOf(!isTapToRecall) }
+    var reviewStatus by remember(row) { mutableStateOf<Boolean?>(null) } // true = Got it, false = Review
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("diff_stacked_card_$index"),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            // Header: Basis of Comparison (Full Width)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = "#$index",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = row.basisOfDifference,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+
+                // Status Badge if rated
+                reviewStatus?.let { gotIt ->
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = if (gotIt) SuccessGreen.copy(alpha = 0.15f) else Amber500.copy(alpha = 0.15f)
+                    ) {
+                        Text(
+                            text = if (gotIt) "✓ Got it" else "🔁 Review",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (gotIt) SuccessGreen else Amber500,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Concept A Strip (Blue Accent, Full Width)
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Sky500.copy(alpha = 0.08f),
+                border = BorderStroke(1.dp, Sky500.copy(alpha = 0.35f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Text(
+                        text = "● $conceptAName",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Sky500
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = row.conceptAValue,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Concept B Strip (Amber Accent, Full Width with Tap-to-Recall Mask)
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Amber500.copy(alpha = 0.08f),
+                border = BorderStroke(1.dp, Amber500.copy(alpha = 0.35f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = !isRevealed) { isRevealed = true }
+                    .testTag("concept_b_strip_$index")
+            ) {
+                Column(modifier = Modifier.padding(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "● $conceptBName",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Amber500
+                        )
+
+                        if (!isRevealed) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Lock, contentDescription = null, tint = Amber500, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Tap to reveal", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Amber500)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    if (!isRevealed) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(44.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Amber500.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Visibility, contentDescription = null, tint = Amber500, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "🔒 Tap to reveal & compare answer",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Amber500
+                                )
+                            }
+                        }
+                    } else {
+                        AnimatedVisibility(
+                            visible = true,
+                            enter = fadeIn(tween(250))
+                        ) {
+                            Column {
+                                Text(
+                                    text = row.conceptBValue,
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+
+                                if (isTapToRecall) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Self-Rating: ", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (reviewStatus == true) SuccessGreen else SuccessGreen.copy(alpha = 0.15f),
+                                            modifier = Modifier.clickable { reviewStatus = true }
+                                        ) {
+                                            Text(
+                                                text = "✓ Got it",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (reviewStatus == true) Color.White else SuccessGreen,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (reviewStatus == false) Amber500 else Amber500.copy(alpha = 0.15f),
+                                            modifier = Modifier.clickable { reviewStatus = false }
+                                        ) {
+                                            Text(
+                                                text = "🔁 Review",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (reviewStatus == false) Color.Black else Amber500,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =========================================================================
+// SUB-MODE B: 1-COLUMN PROGRESSIVE MEMORY EXPAND MATRIX
+// =========================================================================
+@Composable
+fun ProgressiveMemoryMatrixCard(
+    matrix: StatutoryCheatMatrix,
+    filterQuery: String = "",
+    selectedCategory: String = "All Rows"
+) {
+    // 0 = 1 Col (Self-Test), 1 = Expand Col 2, 2 = Full 3-Col Sheet
+    var expandLevel by remember { mutableIntStateOf(0) }
+    // Set of revealed row keys for individual cell peek
+    val revealedCells = remember { mutableStateMapOf<String, Boolean>() }
+
+    val filteredRows = remember(matrix, filterQuery, selectedCategory) {
+        val categoryFiltered = when (selectedCategory) {
+            "Statutory Limits" -> matrix.rows.filter {
+                !it.penaltyOrException.contains("Quotas —") &&
+                (it.sectionOrClause.startsWith("Sec") || it.sectionOrClause.startsWith("AS ") ||
+                 it.sectionOrClause.startsWith("Clause") || it.sectionOrClause.startsWith("GST") ||
+                 it.sectionOrClause.startsWith("FM") || it.sectionOrClause.startsWith("SM") ||
+                 it.sectionOrClause.contains("Variance") || it.sectionOrClause.contains("Analysis"))
+            }
+            "Blueprint Tables" -> matrix.rows.filter {
+                it.sectionOrClause.startsWith("Blueprint") ||
+                it.thresholdOrLimit.contains("As per Blueprint") ||
+                it.penaltyOrException.contains("Exam Trap & Blueprint")
+            }
+            "Syllabus & Quotas" -> matrix.rows.filter {
+                it.penaltyOrException.contains("Quotas —") ||
+                it.sectionOrClause.contains("Tier 1") || it.sectionOrClause.contains("Tier 2") ||
+                it.sectionOrClause.contains("Tier 3") || it.sectionOrClause.contains("Tier 4")
+            }
+            else -> matrix.rows
+        }
+
+        if (filterQuery.isBlank()) categoryFiltered
+        else categoryFiltered.filter { row ->
+            row.sectionOrClause.contains(filterQuery, ignoreCase = true) ||
+            row.provisionName.contains(filterQuery, ignoreCase = true) ||
+            row.thresholdOrLimit.contains(filterQuery, ignoreCase = true) ||
+            row.approvalOrRate.contains(filterQuery, ignoreCase = true) ||
+            row.penaltyOrException.contains(filterQuery, ignoreCase = true)
+        }
+    }
+
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.2.dp, Amber500.copy(alpha = 0.5f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("statutory_matrix_card_${matrix.paper.name}")
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            // Header Info Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.TableChart, contentDescription = null, tint = Amber500, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = matrix.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Excel Quick Reference • ${filteredRows.size} Entries",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // 1-Column Progressive Expand Pill Bar
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    // Pill 1: 1 Col (Self-Test)
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (expandLevel == 0) Amber500 else Color.Transparent,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { expandLevel = 0 }
+                            .testTag("pill_1_col_test")
+                    ) {
+                        Text(
+                            text = "1 Col (Self-Test)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (expandLevel == 0) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(vertical = 6.dp)
+                        )
+                    }
+
+                    // Pill 2: + Expand Col 2
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (expandLevel == 1) Amber500 else Color.Transparent,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { expandLevel = 1 }
+                            .testTag("pill_2_col_expand")
+                    ) {
+                        Text(
+                            text = "+ Expand Col 2",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (expandLevel == 1) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(vertical = 6.dp)
+                        )
+                    }
+
+                    // Pill 3: Full 3-Col Sheet
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (expandLevel == 2) Amber500 else Color.Transparent,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { expandLevel = 2 }
+                            .testTag("pill_3_col_full")
+                    ) {
+                        Text(
+                            text = "Full 3-Col Sheet",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (expandLevel == 2) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Progressive Table View
+            val horizontalScrollState = rememberScrollState()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(horizontalScrollState)
+            ) {
+                // Table Header Row
+                Row(
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .padding(vertical = 8.dp)
+                ) {
+                    Box(modifier = Modifier.width(180.dp).padding(horizontal = 8.dp)) {
+                        Text(matrix.columnHeaders.getOrElse(0) { "Section / Clause" }, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                    Box(modifier = Modifier.width(190.dp).padding(horizontal = 8.dp)) {
+                        Text(matrix.columnHeaders.getOrElse(1) { "Provision Name" }, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+
+                    if (expandLevel >= 1) {
+                        Box(modifier = Modifier.width(180.dp).padding(horizontal = 8.dp)) {
+                            Text(matrix.columnHeaders.getOrElse(2) { "Threshold / Limit" }, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
+                    }
+
+                    if (expandLevel >= 2) {
+                        Box(modifier = Modifier.width(220.dp).padding(horizontal = 8.dp)) {
+                            Text(matrix.columnHeaders.getOrElse(3) { "Approval / Rate" }, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
+                        Box(modifier = Modifier.width(260.dp).padding(horizontal = 8.dp)) {
+                            Text(matrix.columnHeaders.getOrElse(4) { "Penalty / Exception" }, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
+                    }
+                }
+
+                // Table Data Rows
+                filteredRows.forEachIndexed { rowIndex, row ->
+                    val rowBg = if (rowIndex % 2 == 0) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    val cellKey = "${row.sectionOrClause}_$rowIndex"
+                    val isCellPeeked = revealedCells[cellKey] == true
+
+                    Row(
+                        modifier = Modifier
+                            .background(rowBg)
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Col 0: Section / Clause
+                        Box(modifier = Modifier.width(180.dp).padding(horizontal = 8.dp)) {
+                            Text(row.sectionOrClause, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Amber500)
+                        }
+
+                        // Col 1: Provision Name
+                        Box(modifier = Modifier.width(190.dp).padding(horizontal = 8.dp)) {
+                            Text(row.provisionName, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+
+                        // Col 2: Threshold / Limit
+                        if (expandLevel >= 1 || isCellPeeked) {
+                            Box(modifier = Modifier.width(180.dp).padding(horizontal = 8.dp)) {
+                                Text(row.thresholdOrLimit, fontSize = 11.sp, color = Sky500)
+                            }
+                        } else if (expandLevel == 0) {
+                            Box(
+                                modifier = Modifier
+                                    .width(180.dp)
+                                    .padding(horizontal = 8.dp)
+                                    .clickable { revealedCells[cellKey] = true }
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Sky500.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = "🔒 Peek Limit",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Sky500,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Col 3 & 4 (Full Sheet)
+                        if (expandLevel >= 2) {
+                            Box(modifier = Modifier.width(220.dp).padding(horizontal = 8.dp)) {
+                                Text(row.approvalOrRate, fontSize = 11.sp)
+                            }
+                            Box(modifier = Modifier.width(260.dp).padding(horizontal = 8.dp)) {
+                                Text(row.penaltyOrException, fontSize = 11.sp, color = ErrorRed)
+                            }
+                        }
+                    }
+                }
+
+                if (filteredRows.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No rows match '$filterQuery'", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =========================================================================
+// SUB-MODE B: TINDER-STYLE CARD SWIPE DRILL
+// =========================================================================
+data class SwipeDeckCard(
+    val id: String,
+    val topicId: String,
+    val title: String,
+    val subtitle: String,
+    val keyRule: String,
+    val pitfallOrException: String,
+    val paperName: String
+)
+
+@Composable
+fun TinderSwipeDrillSection(
+    paper: PaperCode,
+    topics: List<SyllabusTopic>,
+    matrixRows: List<StatutoryMatrixRow>,
+    progressMap: Map<String, com.example.data.local.TopicProgressEntity>,
+    onSwipeMastered: (String) -> Unit,
+    onSwipeNeedPractice: (String) -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+
+    // Build the drill card deck
+    val cards = remember(paper, topics, matrixRows) {
+        val topicCards = topics.map { topic ->
+            SwipeDeckCard(
+                id = "topic_${topic.id}",
+                topicId = topic.id,
+                title = topic.topicName,
+                subtitle = "${topic.chapter} • ${topic.priorityTier.label.split("•")[0].trim()}",
+                keyRule = topic.keyProvisions.firstOrNull() ?: topic.blueprint?.recognitionAndMeasurement?.take(160) ?: "Standard provisions under ICAI Material.",
+                pitfallOrException = if (topic.commonExaminerPitfalls.isNotBlank()) "🚨 Trap: ${topic.commonExaminerPitfalls}" else "Ensure condition compliance.",
+                paperName = paper.shortName
+            )
+        }
+        val rowCards = matrixRows.take(10).mapIndexed { idx, row ->
+            SwipeDeckCard(
+                id = "row_${row.sectionOrClause}_$idx",
+                topicId = topics.firstOrNull()?.id ?: "general_topic",
+                title = "${row.sectionOrClause}: ${row.provisionName}",
+                subtitle = "Statutory Matrix Rule • ${row.thresholdOrLimit}",
+                keyRule = "Threshold: ${row.thresholdOrLimit} | Approval: ${row.approvalOrRate}",
+                pitfallOrException = "🚨 Exception / Penalty: ${row.penaltyOrException}",
+                paperName = paper.shortName
+            )
+        }
+        (topicCards + rowCards).shuffled()
+    }
+
+    var currentIndex by remember(paper) { mutableIntStateOf(0) }
+    val historyStack = remember { mutableListOf<Pair<Int, Int>>() } // (cardIndex, status: 1 or 2)
+    var masteredCount by remember(paper) { mutableIntStateOf(0) }
+    var needPracticeCount by remember(paper) { mutableIntStateOf(0) }
+
+    val offsetX = remember { Animatable(0f) }
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, Amber500.copy(alpha = 0.4f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("tinder_swipe_drill_container")
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // Deck Progress Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Whatshot, contentDescription = null, tint = Amber500, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Tinder Swipe Recall Drill", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Text(
+                        text = if (currentIndex < cards.size) "Card ${currentIndex + 1} of ${cards.size}" else "Complete!",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Progress Bar
+            val progressFraction = if (cards.isNotEmpty()) (currentIndex.toFloat() / cards.size).coerceIn(0f, 1f) else 1f
+            LinearProgressIndicator(
+                progress = { progressFraction },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = Amber500,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            if (currentIndex < cards.size) {
+                val currentCard = cards[currentIndex]
+                val currentTopicProgress = progressMap[currentCard.topicId]
+                val previousStatus = currentTopicProgress?.swipeDrillStatus ?: 0
+
+                // Swipable Card
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(280.dp)
+                        .graphicsLayer {
+                            translationX = offsetX.value
+                            rotationZ = (offsetX.value / 40f).coerceIn(-15f, 15f)
+                            alpha = (1f - (kotlin.math.abs(offsetX.value) / 800f)).coerceIn(0.5f, 1f)
+                        }
+                        .pointerInput(currentIndex) {
+                            detectHorizontalDragGestures(
+                                onDragEnd = {
+                                    if (offsetX.value > 220f) {
+                                        // Swipe Right (Mastered)
+                                        coroutineScope.launch {
+                                            offsetX.animateTo(1000f, tween(200))
+                                            onSwipeMastered(currentCard.topicId)
+                                            masteredCount++
+                                            historyStack.add(currentIndex to 2)
+                                            currentIndex++
+                                            offsetX.snapTo(0f)
+                                        }
+                                    } else if (offsetX.value < -220f) {
+                                        // Swipe Left (Need Practice)
+                                        coroutineScope.launch {
+                                            offsetX.animateTo(-1000f, tween(200))
+                                            onSwipeNeedPractice(currentCard.topicId)
+                                            needPracticeCount++
+                                            historyStack.add(currentIndex to 1)
+                                            currentIndex++
+                                            offsetX.snapTo(0f)
+                                        }
+                                    } else {
+                                        coroutineScope.launch { offsetX.animateTo(0f, spring()) }
+                                    }
+                                },
+                                onHorizontalDrag = { change, dragAmount ->
+                                    change.consume()
+                                    coroutineScope.launch { offsetX.snapTo(offsetX.value + dragAmount) }
+                                }
+                            )
+                        }
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("active_swipe_card_$currentIndex"),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer
+                                    ) {
+                                        Text(
+                                            text = currentCard.paperName,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+
+                                    // Previous Status Badge
+                                    if (previousStatus == 2) {
+                                        Surface(shape = RoundedCornerShape(6.dp), color = SuccessGreen.copy(alpha = 0.2f)) {
+                                            Text("Already Mastered ✓", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = SuccessGreen, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                        }
+                                    } else if (previousStatus == 1) {
+                                        Surface(shape = RoundedCornerShape(6.dp), color = Amber500.copy(alpha = 0.2f)) {
+                                            Text("Flagged for Practice 🔁", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Amber500, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Text(
+                                    text = currentCard.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    maxLines = 2
+                                )
+                                Text(
+                                    text = currentCard.subtitle,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surface,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp)) {
+                                        Text("📌 Key Statutory Rule:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Sky500)
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(currentCard.keyRule, fontSize = 11.sp, lineHeight = 16.sp)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = ErrorRed.copy(alpha = 0.08f),
+                                    border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.25f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = currentCard.pitfallOrException,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = ErrorRed,
+                                        modifier = Modifier.padding(8.dp)
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("← Swipe Left: Need Practice", fontSize = 10.sp, color = ErrorRed, fontWeight = FontWeight.Bold)
+                                Text("Swipe Right: Mastered →", fontSize = 10.sp, color = SuccessGreen, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    // Swipe Overlay Badges
+                    if (offsetX.value > 60f) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = SuccessGreen,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = "MASTERED ✓",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                    } else if (offsetX.value < -60f) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = ErrorRed,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = "NEED PRACTICE ↻",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Bottom Action Buttons: Left (Need Practice), Center (Undo), Right (Mastered)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Left Button: Need Practice
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                offsetX.animateTo(-1000f, tween(180))
+                                onSwipeNeedPractice(currentCard.topicId)
+                                needPracticeCount++
+                                historyStack.add(currentIndex to 1)
+                                currentIndex++
+                                offsetX.snapTo(0f)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.testTag("swipe_button_need_practice")
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Need Practice", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+
+                    // Center Button: Undo
+                    OutlinedButton(
+                        onClick = {
+                            if (historyStack.isNotEmpty()) {
+                                val last = historyStack.removeAt(historyStack.lastIndex)
+                                currentIndex = last.first
+                                if (last.second == 2 && masteredCount > 0) masteredCount--
+                                if (last.second == 1 && needPracticeCount > 0) needPracticeCount--
+                            }
+                        },
+                        enabled = historyStack.isNotEmpty(),
+                        shape = RoundedCornerShape(20.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.testTag("swipe_button_undo")
+                    ) {
+                        Icon(Icons.Default.Undo, contentDescription = "Undo", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Undo", fontSize = 11.sp)
+                    }
+
+                    // Right Button: Mastered
+                    Button(
+                        onClick = {
+                            coroutineScope.launch {
+                                offsetX.animateTo(1000f, tween(180))
+                                onSwipeMastered(currentCard.topicId)
+                                masteredCount++
+                                historyStack.add(currentIndex to 2)
+                                currentIndex++
+                                offsetX.snapTo(0f)
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier.testTag("swipe_button_mastered")
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Mastered", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                }
+            } else {
+                // Deck Completion State
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(CircleShape)
+                            .background(SuccessGreen.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(32.dp))
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Text("Drill Complete!", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Mastered: $masteredCount • Need Practice: $needPracticeCount",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Chapters marked as 'Need Practice' are automatically pinned in your Progress Ledger for quick revision.",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Button(
+                        onClick = {
+                            currentIndex = 0
+                            masteredCount = 0
+                            needPracticeCount = 0
+                            historyStack.clear()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Amber500, contentColor = Color.Black),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Restart Deck Drill", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Dropdown picker helper
 @Composable
 fun TopicDropdownPicker(
     label: String,
@@ -721,7 +1749,9 @@ fun TopicDropdownPicker(
         OutlinedButton(
             onClick = { expanded = true },
             shape = RoundedCornerShape(10.dp),
-            modifier = Modifier.fillMaxWidth().testTag(testTag),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(testTag),
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
         ) {
@@ -762,244 +1792,6 @@ fun TopicDropdownPicker(
                         expanded = false
                     }
                 )
-            }
-        }
-    }
-}
-
-@Composable
-fun ComparisonRowCard(
-    row: ComparisonRow,
-    isQuizMode: Boolean,
-    isRevealed: Boolean,
-    onReveal: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth().testTag("diff_row_${row.basisOfDifference.take(6)}"),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = "📌 ${row.basisOfDifference}",
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Concept A Box
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = row.conceptAValue,
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp,
-                        modifier = Modifier.padding(8.dp)
-                    )
-                }
-
-                // Concept B Box
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable(enabled = isQuizMode && !isRevealed) { onReveal() }
-                ) {
-                    if (isRevealed) {
-                        Text(
-                            text = row.conceptBValue,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            modifier = Modifier.padding(8.dp)
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().height(60.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Visibility, contentDescription = null, tint = Sky500, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Tap to Reveal", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Sky500)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun StatutoryCheatMatrixCard(
-    matrix: StatutoryCheatMatrix,
-    filterQuery: String = "",
-    selectedCategory: String = "All Rows"
-) {
-    val filteredRows = remember(matrix, filterQuery, selectedCategory) {
-        val categoryFiltered = when (selectedCategory) {
-            "Statutory Limits" -> matrix.rows.filter {
-                !it.penaltyOrException.contains("Quotas —") &&
-                (it.sectionOrClause.startsWith("Sec") || it.sectionOrClause.startsWith("AS ") ||
-                 it.sectionOrClause.startsWith("Clause") || it.sectionOrClause.startsWith("GST") ||
-                 it.sectionOrClause.startsWith("FM") || it.sectionOrClause.startsWith("SM") ||
-                 it.sectionOrClause.contains("Variance") || it.sectionOrClause.contains("Analysis"))
-            }
-            "Blueprint Tables" -> matrix.rows.filter {
-                it.sectionOrClause.startsWith("Blueprint") ||
-                it.thresholdOrLimit.contains("As per Blueprint") ||
-                it.penaltyOrException.contains("Exam Trap & Blueprint")
-            }
-            "Syllabus & Quotas" -> matrix.rows.filter {
-                it.penaltyOrException.contains("Quotas —") ||
-                it.sectionOrClause.contains("Tier 1") || it.sectionOrClause.contains("Tier 2") ||
-                it.sectionOrClause.contains("Tier 3") || it.sectionOrClause.contains("Tier 4")
-            }
-            else -> matrix.rows
-        }
-
-        if (filterQuery.isBlank()) categoryFiltered
-        else categoryFiltered.filter { row ->
-            row.sectionOrClause.contains(filterQuery, ignoreCase = true) ||
-            row.provisionName.contains(filterQuery, ignoreCase = true) ||
-            row.thresholdOrLimit.contains(filterQuery, ignoreCase = true) ||
-            row.approvalOrRate.contains(filterQuery, ignoreCase = true) ||
-            row.penaltyOrException.contains(filterQuery, ignoreCase = true)
-        }
-    }
-
-    Card(
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.2.dp, Amber500.copy(alpha = 0.5f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        modifier = Modifier.fillMaxWidth().testTag("statutory_matrix_card_${matrix.paper.name}")
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.TableChart, contentDescription = null, tint = Amber500, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            text = matrix.title,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "Excel-Style Master Quick Reference • Category: $selectedCategory",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Amber500.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, Amber500.copy(alpha = 0.35f))
-                ) {
-                    Text(
-                        text = "Total Entries: ${filteredRows.size}",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Amber500,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Column widths helper
-            fun getColumnWidth(index: Int) = when (index) {
-                0 -> 160.dp
-                1 -> 180.dp
-                2 -> 170.dp
-                3 -> 230.dp
-                else -> 260.dp
-            }
-
-            // Horizontal Scrollable Matrix Table
-            val horizontalScrollState = rememberScrollState()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(horizontalScrollState)
-            ) {
-                // Table Header Row
-                Row(
-                    modifier = Modifier
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(vertical = 8.dp)
-                ) {
-                    matrix.columnHeaders.forEachIndexed { colIndex, header ->
-                        Box(
-                            modifier = Modifier
-                                .width(getColumnWidth(colIndex))
-                                .padding(horizontal = 8.dp)
-                        ) {
-                            Text(
-                                text = header,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                    }
-                }
-
-                // Table Data Rows
-                filteredRows.forEachIndexed { rowIndex, row ->
-                    val rowBg = if (rowIndex % 2 == 0) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                    Row(
-                        modifier = Modifier
-                            .background(rowBg)
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(modifier = Modifier.width(getColumnWidth(0)).padding(horizontal = 8.dp)) {
-                            Text(row.sectionOrClause, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Amber500)
-                        }
-                        Box(modifier = Modifier.width(getColumnWidth(1)).padding(horizontal = 8.dp)) {
-                            Text(row.provisionName, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                        Box(modifier = Modifier.width(getColumnWidth(2)).padding(horizontal = 8.dp)) {
-                            Text(row.thresholdOrLimit, fontSize = 11.sp, color = Sky500)
-                        }
-                        Box(modifier = Modifier.width(getColumnWidth(3)).padding(horizontal = 8.dp)) {
-                            Text(row.approvalOrRate, fontSize = 11.sp)
-                        }
-                        Box(modifier = Modifier.width(getColumnWidth(4)).padding(horizontal = 8.dp)) {
-                            Text(row.penaltyOrException, fontSize = 11.sp, color = ErrorRed)
-                        }
-                    }
-                }
-
-                if (filteredRows.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        val emptyMsg = if (filterQuery.isNotBlank()) "No rows match '$filterQuery' in $selectedCategory" else "No rows found in category '$selectedCategory'"
-                        Text(emptyMsg, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
             }
         }
     }

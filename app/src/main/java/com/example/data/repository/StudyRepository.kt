@@ -17,6 +17,9 @@ import com.example.data.model.DepthExplanation
 import com.example.data.model.LabVerdict
 import com.example.data.model.PaperCode
 import com.example.data.model.SyllabusTopic
+import com.example.data.curriculum.StrategyBlueprintReader
+import com.example.data.model.SubjectArchetype
+import com.example.data.model.TeacherSection
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -268,5 +271,208 @@ class StudyRepository(
         return database.studyDao().getAllCustomDifferences().map { list ->
             list.map { it.toDomain() }
         }
+    }
+
+    suspend fun markTeacherReadStatus(topicId: String, completed: Boolean) {
+        val existing = database.studyDao().getProgressForTopic(topicId)
+        if (existing == null) {
+            database.studyDao().insertOrUpdateProgress(
+                TopicProgressEntity(
+                    topicId = topicId,
+                    teacherReadCompleted = if (completed) 1 else 0,
+                    lastRevisedAt = System.currentTimeMillis()
+                )
+            )
+        } else {
+            database.studyDao().updateTeacherReadStatus(topicId, if (completed) 1 else 0)
+        }
+    }
+
+    suspend fun markSwipeDrillStatus(topicId: String, status: Int) {
+        val existing = database.studyDao().getProgressForTopic(topicId)
+        if (existing == null) {
+            database.studyDao().insertOrUpdateProgress(
+                TopicProgressEntity(
+                    topicId = topicId,
+                    swipeDrillStatus = status,
+                    lastRevisedAt = System.currentTimeMillis()
+                )
+            )
+        } else {
+            database.studyDao().updateSwipeDrillStatus(topicId, status)
+        }
+    }
+
+    fun getOfflineTeacherArticle(topic: SyllabusTopic, archetype: SubjectArchetype): List<TeacherSection> {
+        if (topic.teacherSections.isNotEmpty()) {
+            return topic.teacherSections
+        }
+
+        val explanation = getExplanation(topic.id)
+        val blueprintExcerpt = StrategyBlueprintReader.getBlueprintExcerptForTopic(context, topic)
+        val matchingScenario = CuratedCatchLabScenarios.getScenariosForPaper(topic.paper).firstOrNull { sc ->
+            sc.topic.contains(topic.topicName, ignoreCase = true) ||
+            topic.topicName.contains(sc.topic, ignoreCase = true) ||
+            sc.id.contains(topic.id, ignoreCase = true)
+        } ?: CuratedCatchLabScenarios.getScenariosForPaper(topic.paper).firstOrNull()
+
+        // Section 1: "1. Core Logic & Everyday Analogy"
+        val depth1Text = explanation?.depth1?.trim()
+        val section1Body = if (!depth1Text.isNullOrBlank()) {
+            depth1Text
+        } else {
+            """
+            ☕ **The Everyday Commerce Analogy:**
+            Imagine running a local enterprise or professional partnership in India. When dealing with **${topic.topicName}**, think of this provision as a statutory safeguard ensuring proper financial reporting, capital integrity, and operational accountability.
+
+            💡 **Why This Rule Exists in Practice:**
+            ${topic.blueprint?.scope ?: (topic.keyProvisions.firstOrNull() ?: "Compliance with mandatory ICAI statutory and accounting requirements.")}
+
+            Without this guideline, businesses could misstate assets, underreport liabilities, or fail to recognize obligations to stakeholders.
+            """.trimIndent()
+        }
+
+        // Section 2: "2. Official Blueprint Breakdown"
+        val section2Body = when (archetype) {
+            SubjectArchetype.STANDARDS_AND_ACCOUNTS -> """
+                ### 🏛️ Standards & Company Accounts Blueprint
+
+                **1. Scope & Applicability:**
+                ${topic.blueprint?.scope ?: "Governed by ICAI Accounting Standards and Companies Act, 2013."}
+
+                **2. Recognition, Measurement & Statutory Conditions:**
+                ${topic.blueprint?.recognitionAndMeasurement ?: topic.keyProvisions.joinToString("\n") { "• $it" }}
+
+                **3. Accounting Treatment, Proforma & Schedule III Disclosures:**
+                ${topic.blueprint?.disclosure ?: "Disclose significant accounting policies, notes to accounts, and appropriate classifications."}
+                ${if (!blueprintExcerpt.isNullOrBlank()) "\n\n**Blueprint Faculty Guidance:**\n$blueprintExcerpt" else ""}
+            """.trimIndent()
+
+            SubjectArchetype.STATUTE_AND_CASE_LAW, SubjectArchetype.TAX_AMENDMENTS_AND_COMPUTATION -> """
+                ### ⚖️ Statutory & Regulatory Blueprint
+
+                **1. Bare Statutory Provisions & Core Rules:**
+                ${topic.keyProvisions.take(2).joinToString("\n") { "• $it" }.ifBlank { topic.blueprint?.scope ?: "Applicable sections and statutory rules." }}
+
+                **2. Provisos, Sub-Clauses & Exceptions:**
+                ${if (topic.keyProvisions.size > 2) topic.keyProvisions.drop(2).joinToString("\n") { "• $it" } else "No blanket exemptions unless explicitly notified by the Central Government or statutory authority."}
+
+                **3. Threshold Limits, Time Frames & Consequences of Non-Compliance:**
+                ${topic.blueprint?.recognitionAndMeasurement ?: "Strict adherence to statutory filing dates, approval majorities, and prescribed penalty provisions."}
+                ${if (!blueprintExcerpt.isNullOrBlank()) "\n\n**Blueprint Faculty Guidance:**\n$blueprintExcerpt" else ""}
+            """.trimIndent()
+
+            SubjectArchetype.FORMULAS_AND_PROFORMA, SubjectArchetype.STRATEGIC_FRAMEWORKS -> """
+                ### 📊 Formulas, Proforma & Framework Blueprint
+
+                **1. Core Principles, Key Formulas & Strategic Matrix:**
+                ${topic.keyProvisions.take(2).joinToString("\n") { "• $it" }.ifBlank { topic.blueprint?.scope ?: "Core operational formulas and cost behaviors." }}
+
+                **2. Working Table Proforma & Methodological Steps:**
+                ${topic.blueprint?.recognitionAndMeasurement ?: (if (topic.keyProvisions.size > 2) topic.keyProvisions.drop(2).joinToString("\n") { "• $it" } else "Standard cost sheet / working proforma format.")}
+
+                **3. Decision Rule, Managerial Implication & Optimization:**
+                ${topic.blueprint?.disclosure ?: "Analyze break-even point, sensitivity, margin of safety, and resource optimization."}
+                ${if (!blueprintExcerpt.isNullOrBlank()) "\n\n**Blueprint Faculty Guidance:**\n$blueprintExcerpt" else ""}
+            """.trimIndent()
+
+            SubjectArchetype.AUDIT_PROCEDURES_AND_CLAUSES -> """
+                ### 🔍 Audit Procedures, Standards & Reporting Blueprint
+
+                **1. Standard on Auditing (SA) Scope & Auditor's Objective:**
+                ${topic.blueprint?.scope ?: "Engagement execution in accordance with Standards on Auditing (SAs) issued by ICAI."}
+
+                **2. Substantive Procedures, Inquiries & Test of Details:**
+                ${topic.blueprint?.recognitionAndMeasurement ?: topic.keyProvisions.joinToString("\n") { "• $it" }}
+
+                **3. Documentation, CARO 2020 Reporting & Modified Opinions:**
+                ${topic.blueprint?.disclosure ?: "Gather sufficient appropriate audit evidence (SA 500) and draft CARO clause remarks or audit report modifications (SA 705)."}
+                ${if (!blueprintExcerpt.isNullOrBlank()) "\n\n**Blueprint Faculty Guidance:**\n$blueprintExcerpt" else ""}
+            """.trimIndent()
+        }
+
+        // Section 3: "3. Examiner Traps & Amendments"
+        val section3Body = buildString {
+            appendLine("⚠️ **Primary Examiner Pitfall & Student Misconceptions:**")
+            appendLine(topic.commonExaminerPitfalls)
+            appendLine()
+            if (topic.hasRecentAmendment) {
+                appendLine("📢 **Recent ICAI Study Material Amendment / Finance Act Update:**")
+                appendLine(topic.amendmentSummary)
+                appendLine()
+            }
+            appendLine("🔍 **Recurring ICAI Question Patterns:**")
+            appendLine("• Exam Frequency: ${topic.pastPaperFrequency} (Average: ${topic.averageMarks.toInt()} Marks)")
+            appendLine("• Historical Trend: ${topic.trendDirection}")
+            appendLine("• Target Practice Quotas: Written: ${topic.writtenTarget} | MCQs: ${topic.mcqTarget} | Recall: ${topic.oralRecallTarget}")
+            if (matchingScenario != null) {
+                appendLine()
+                appendLine("📌 **Linked Trap Case Scenario:**")
+                appendLine("*${matchingScenario.title}*")
+                appendLine("Case test snippet: \"${matchingScenario.caseSnippet.take(150)}...\"")
+            }
+        }.trim()
+
+        // Section 4: "4. Exam Answer Presentation"
+        val depth3Text = explanation?.depth3?.trim()
+        val section4Body = if (!depth3Text.isNullOrBlank()) {
+            depth3Text
+        } else {
+            """
+            🏛️ **ICAI Suggested Answer 3-Step Structure:**
+
+            **Step 1: Statutory Authority & Relevant Provision:**
+            Identify the exact standard or section (**${topic.topicName}**). State the statutory criteria with mandatory ICAI keywords.
+            *(Reference: ${topic.blueprint?.scope ?: topic.keyProvisions.firstOrNull() ?: "ICAI New Scheme Core Framework"})*
+
+            **Step 2: Working Notes & Fact Analysis:**
+            Step-by-step arithmetic computation or legal evaluation:
+            ${topic.keyProvisions.joinToString("\n") { "- **$it**" }}
+
+            **Step 3: Conclusion & Examiner Advice:**
+            Conclude with a clear, definitive statement.
+            Avoid generic answers—examiners look for specific thresholds, precise section numbers, and journal/disclosure formatting.
+            *Examiner Warning: ${topic.commonExaminerPitfalls}*
+            """.trimIndent()
+        }
+
+        return listOf(
+            TeacherSection(
+                id = "sec_1_logic",
+                heading = "1. Core Logic & Everyday Analogy",
+                bodyMarkdown = section1Body
+            ),
+            TeacherSection(
+                id = "sec_2_blueprint",
+                heading = "2. Official Blueprint Breakdown",
+                bodyMarkdown = section2Body
+            ),
+            TeacherSection(
+                id = "sec_3_traps",
+                heading = "3. Examiner Traps & Amendments",
+                bodyMarkdown = section3Body,
+                linkedTrapScenarioId = matchingScenario?.id
+            ),
+            TeacherSection(
+                id = "sec_4_exam_format",
+                heading = "4. Exam Answer Presentation",
+                bodyMarkdown = section4Body
+            )
+        )
+    }
+
+    fun getHintForTopic(topic: SyllabusTopic): String {
+        val firstProv = topic.keyProvisions.firstOrNull()?.trim()
+        if (!firstProv.isNullOrBlank()) {
+            return "💡 Provision Hint: $firstProv"
+        }
+        val bp = topic.blueprint
+        if (bp != null && bp.recognitionAndMeasurement.isNotBlank()) {
+            return "💡 Provision Hint: ${bp.recognitionAndMeasurement.take(120)}..."
+        }
+        if (topic.commonExaminerPitfalls.isNotBlank()) {
+            return "💡 Exam Trap Hint: ${topic.commonExaminerPitfalls.take(120)}..."
+        }
+        return "💡 Hint: Ensure compliance with statutory criteria for ${topic.topicName}."
     }
 }

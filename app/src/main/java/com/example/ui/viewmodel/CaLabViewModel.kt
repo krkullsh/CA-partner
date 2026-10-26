@@ -215,6 +215,18 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun markTeacherRead(topicId: String, completed: Boolean = true) {
+        viewModelScope.launch {
+            repository.markTeacherReadStatus(topicId, completed)
+        }
+    }
+
+    fun recordSwipeDrillStatus(topicId: String, status: Int) {
+        viewModelScope.launch {
+            repository.markSwipeDrillStatus(topicId, status)
+        }
+    }
+
     fun toggleBookmark(id: String, type: String, title: String, paperName: String) {
         viewModelScope.launch {
             repository.toggleBookmark(id, type, title, paperName)
