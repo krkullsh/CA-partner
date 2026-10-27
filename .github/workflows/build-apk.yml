@@ -53,8 +53,9 @@ jobs:
           else
             echo "Reusing existing persistent V6 keystore (app/calab-v6.keystore)..."
           fi
-          cp app/calab-v6.keystore ~/.android/debug.keystore
+          cp app/calab-v6.keystore debug.keystore
           cp app/calab-v6.keystore app/debug.keystore
+          cp app/calab-v6.keystore ~/.android/debug.keystore
 
       - name: Build V6 Debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
