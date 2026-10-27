@@ -25,7 +25,11 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
+
+      - name: Setup Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
 
       - name: Ensure Persistent V6 Signing Keystore Exists
         run: |
@@ -47,16 +51,13 @@ jobs:
             git commit -m "chore(v6): lock persistent signing keystore for seamless app updates [skip ci]" || true
             git push origin HEAD:main || true
           else
-            echo "Reusing existing persistent V6 keystore..."
+            echo "Reusing existing persistent V6 keystore (app/calab-v6.keystore)..."
           fi
           cp app/calab-v6.keystore ~/.android/debug.keystore
           cp app/calab-v6.keystore app/debug.keystore
 
-      - name: Grant Execute Permission for Gradlew
-        run: chmod +x gradlew
-
       - name: Build V6 Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Upload V6 APK Artifact
         uses: actions/upload-artifact@v4
