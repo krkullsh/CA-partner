@@ -40,7 +40,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -67,6 +69,11 @@ fun SettingsDialog(
 
     val experienceLevel by viewModel.experienceLevel.collectAsState()
     val catalogSortOrder by viewModel.catalogSortOrder.collectAsState()
+
+    val clipboardManager = LocalClipboardManager.current
+    var backupStatusMessage by remember { mutableStateOf<String?>(null) }
+    var isRestoreInputVisible by remember { mutableStateOf(false) }
+    var restoreJsonInput by remember { mutableStateOf("") }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -358,6 +365,135 @@ fun SettingsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 16.sp
                 )
+
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 5. Data Safety & Backup (V6)
+                Text("🛡️ Data Safety & Backup (V6)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("backup_section_card")
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "Export or restore your solved written counts, diagnostic errors, oral recall quotas, and bookmarks.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 15.sp
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    viewModel.exportProgress { jsonString ->
+                                        if (jsonString.isNotBlank()) {
+                                            clipboardManager.setText(AnnotatedString(jsonString))
+                                            backupStatusMessage = "✓ Copied backup (${jsonString.length} bytes) to clipboard!"
+                                        } else {
+                                            backupStatusMessage = "⚠️ No study data to export yet."
+                                        }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("export_backup_button"),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("📤 Copy Backup", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = {
+                                    val clipText = clipboardManager.getText()?.text?.trim()
+                                    if (!clipText.isNullOrBlank() && clipText.startsWith("{")) {
+                                        viewModel.importProgress(clipText) { msg ->
+                                            backupStatusMessage = msg
+                                        }
+                                    } else {
+                                        isRestoreInputVisible = !isRestoreInputVisible
+                                        if (isRestoreInputVisible && !clipText.isNullOrBlank()) {
+                                            restoreJsonInput = clipText
+                                        }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("restore_backup_button"),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("📥 Restore", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        if (isRestoreInputVisible) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            OutlinedTextField(
+                                value = restoreJsonInput,
+                                onValueChange = { restoreJsonInput = it },
+                                placeholder = { Text("Paste backup JSON here...", fontSize = 11.sp) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("restore_json_field"),
+                                shape = RoundedCornerShape(8.dp),
+                                minLines = 2,
+                                maxLines = 4
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Button(
+                                onClick = {
+                                    if (restoreJsonInput.isNotBlank()) {
+                                        viewModel.importProgress(restoreJsonInput.trim()) { msg ->
+                                            backupStatusMessage = msg
+                                            isRestoreInputVisible = false
+                                        }
+                                    } else {
+                                        backupStatusMessage = "⚠️ Please paste valid backup JSON first."
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("confirm_restore_button"),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Apply Restored Data", fontSize = 11.sp)
+                            }
+                        }
+
+                        if (!backupStatusMessage.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (backupStatusMessage!!.startsWith("✓") || backupStatusMessage!!.contains("Successfully", ignoreCase = true))
+                                    SuccessGreen.copy(alpha = 0.15f)
+                                else
+                                    Amber500.copy(alpha = 0.15f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = backupStatusMessage!!,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (backupStatusMessage!!.startsWith("✓") || backupStatusMessage!!.contains("Successfully", ignoreCase = true))
+                                        SuccessGreen
+                                    else
+                                        Amber500,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(18.dp))
 

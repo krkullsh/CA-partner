@@ -938,4 +938,29 @@ class CaLabViewModel(application: Application) : AndroidViewModel(application) {
     fun dismissDiffAiError() {
         _diffState.value = _diffState.value.copy(aiErrorMessage = null)
     }
+
+    // -------------------------------------------------------------
+    // V6 DATA SAFETY & BACKUP EXPORT / IMPORT
+    // -------------------------------------------------------------
+    fun exportProgress(onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val json = repository.exportUserProgressJson()
+                onResult(json)
+            } catch (e: Exception) {
+                onResult("")
+            }
+        }
+    }
+
+    fun importProgress(json: String, onResult: (String) -> Unit) {
+        viewModelScope.launch {
+            val result = repository.importUserProgressJson(json)
+            result.onSuccess { count ->
+                onResult("Successfully restored $count study records!")
+            }.onFailure { err ->
+                onResult("Import failed: ${err.message ?: "Invalid JSON backup"}")
+            }
+        }
+    }
 }

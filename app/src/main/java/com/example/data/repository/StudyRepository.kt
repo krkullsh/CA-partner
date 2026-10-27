@@ -23,8 +23,13 @@ import com.example.data.model.PaperCode
 import com.example.data.model.SubjectArchetype
 import com.example.data.model.SyllabusTopic
 import com.example.data.model.TeacherSection
+import com.example.data.local.ErrorLogEntity
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 class StudyRepository(
     private val database: CaLabDatabase,
@@ -610,5 +615,182 @@ class StudyRepository(
             return "💡 Exam Trap Hint: ${topic.commonExaminerPitfalls.take(120)}..."
         }
         return "💡 Hint: Ensure compliance with statutory criteria for ${topic.topicName}."
+    }
+
+    // -------------------------------------------------------------
+    // V6 DATA SAFETY & BACKUP EXPORT / IMPORT
+    // -------------------------------------------------------------
+    suspend fun exportUserProgressJson(): String = withContext(Dispatchers.IO) {
+        val root = JSONObject()
+        root.put("app", "CA-Lab")
+        root.put("schemaVersion", 6)
+        root.put("exportedAt", System.currentTimeMillis())
+
+        // 1. Topic Progress
+        val progressList = database.studyDao().getAllProgressList()
+        val progressArr = JSONArray()
+        progressList.forEach { p ->
+            val obj = JSONObject()
+            obj.put("topicId", p.topicId)
+            obj.put("writtenSolved", p.writtenSolved)
+            obj.put("mcqAttempted", p.mcqAttempted)
+            obj.put("mcqCorrect", p.mcqCorrect)
+            obj.put("oralRecallsCompleted", p.oralRecallsCompleted)
+            obj.put("lastRevisedAt", p.lastRevisedAt)
+            obj.put("teacherReadCompleted", p.teacherReadCompleted)
+            obj.put("swipeDrillStatus", p.swipeDrillStatus)
+            progressArr.put(obj)
+        }
+        root.put("topic_progress", progressArr)
+
+        // 2. Verdicts
+        val verdictsList = database.studyDao().getVerdictsList()
+        val verdictsArr = JSONArray()
+        verdictsList.forEach { v ->
+            val obj = JSONObject()
+            obj.put("paperName", v.paperName)
+            obj.put("topicName", v.topicName)
+            obj.put("masteryScore", v.masteryScore)
+            obj.put("nailedJson", v.nailedJson)
+            obj.put("slippedJson", v.slippedJson)
+            obj.put("examinerTip", v.examinerTip)
+            obj.put("nextAction", v.nextAction)
+            obj.put("createdAt", v.createdAt)
+            verdictsArr.put(obj)
+        }
+        root.put("verdicts", verdictsArr)
+
+        // 3. Bookmarks
+        val bookmarksList = database.studyDao().getBookmarksList()
+        val bookmarksArr = JSONArray()
+        bookmarksList.forEach { b ->
+            val obj = JSONObject()
+            obj.put("id", b.id)
+            obj.put("type", b.type)
+            obj.put("title", b.title)
+            obj.put("paperName", b.paperName)
+            obj.put("savedAt", b.savedAt)
+            bookmarksArr.put(obj)
+        }
+        root.put("bookmarks", bookmarksArr)
+
+        // 4. Error Logs
+        val errorLogsList = database.studyDao().getErrorLogsList()
+        val errorsArr = JSONArray()
+        errorLogsList.forEach { e ->
+            val obj = JSONObject()
+            obj.put("paperName", e.paperName)
+            obj.put("topicId", e.topicId)
+            obj.put("topicName", e.topicName)
+            obj.put("priorityTierName", e.priorityTierName)
+            obj.put("questionOrConcept", e.questionOrConcept)
+            obj.put("userMistake", e.userMistake)
+            obj.put("correctRule", e.correctRule)
+            obj.put("timestamp", e.timestamp)
+            errorsArr.put(obj)
+        }
+        root.put("error_logs", errorsArr)
+
+        root.toString(2)
+    }
+
+    suspend fun importUserProgressJson(jsonString: String): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            val root = JSONObject(jsonString)
+            var totalRestored = 0
+
+            // 1. Topic Progress
+            val progressArr = root.optJSONArray("topic_progress")
+            if (progressArr != null && progressArr.length() > 0) {
+                val list = mutableListOf<TopicProgressEntity>()
+                for (i in 0 until progressArr.length()) {
+                    val obj = progressArr.getJSONObject(i)
+                    list.add(
+                        TopicProgressEntity(
+                            topicId = obj.getString("topicId"),
+                            writtenSolved = obj.optInt("writtenSolved", 0),
+                            mcqAttempted = obj.optInt("mcqAttempted", 0),
+                            mcqCorrect = obj.optInt("mcqCorrect", 0),
+                            oralRecallsCompleted = obj.optInt("oralRecallsCompleted", 0),
+                            lastRevisedAt = obj.optLong("lastRevisedAt", System.currentTimeMillis()),
+                            teacherReadCompleted = obj.optInt("teacherReadCompleted", 0),
+                            swipeDrillStatus = obj.optInt("swipeDrillStatus", 0)
+                        )
+                    )
+                }
+                database.studyDao().insertAllProgress(list)
+                totalRestored += list.size
+            }
+
+            // 2. Verdicts
+            val verdictsArr = root.optJSONArray("verdicts")
+            if (verdictsArr != null && verdictsArr.length() > 0) {
+                val list = mutableListOf<VerdictEntity>()
+                for (i in 0 until verdictsArr.length()) {
+                    val obj = verdictsArr.getJSONObject(i)
+                    list.add(
+                        VerdictEntity(
+                            paperName = obj.optString("paperName", "Paper 1"),
+                            topicName = obj.optString("topicName", "General"),
+                            masteryScore = obj.optInt("masteryScore", 70),
+                            nailedJson = obj.optString("nailedJson", "[]"),
+                            slippedJson = obj.optString("slippedJson", "[]"),
+                            examinerTip = obj.optString("examinerTip", ""),
+                            nextAction = obj.optString("nextAction", ""),
+                            createdAt = obj.optLong("createdAt", System.currentTimeMillis())
+                        )
+                    )
+                }
+                database.studyDao().insertAllVerdicts(list)
+                totalRestored += list.size
+            }
+
+            // 3. Bookmarks
+            val bookmarksArr = root.optJSONArray("bookmarks")
+            if (bookmarksArr != null && bookmarksArr.length() > 0) {
+                val list = mutableListOf<BookmarkEntity>()
+                for (i in 0 until bookmarksArr.length()) {
+                    val obj = bookmarksArr.getJSONObject(i)
+                    list.add(
+                        BookmarkEntity(
+                            id = obj.getString("id"),
+                            type = obj.optString("type", "TOPIC"),
+                            title = obj.optString("title", "Saved"),
+                            paperName = obj.optString("paperName", "Paper 1"),
+                            savedAt = obj.optLong("savedAt", System.currentTimeMillis())
+                        )
+                    )
+                }
+                database.studyDao().insertAllBookmarks(list)
+                totalRestored += list.size
+            }
+
+            // 4. Error Logs
+            val errorsArr = root.optJSONArray("error_logs")
+            if (errorsArr != null && errorsArr.length() > 0) {
+                val list = mutableListOf<ErrorLogEntity>()
+                for (i in 0 until errorsArr.length()) {
+                    val obj = errorsArr.getJSONObject(i)
+                    list.add(
+                        ErrorLogEntity(
+                            paperName = obj.optString("paperName", "Paper 1"),
+                            topicId = obj.optString("topicId", "p1_gen"),
+                            topicName = obj.optString("topicName", "General"),
+                            priorityTierName = obj.optString("priorityTierName", "TIER_1"),
+                            questionOrConcept = obj.optString("questionOrConcept", ""),
+                            userMistake = obj.optString("userMistake", ""),
+                            correctRule = obj.optString("correctRule", ""),
+                            timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+                        )
+                    )
+                }
+                database.studyDao().insertAllErrorLogs(list)
+                totalRestored += list.size
+            }
+
+            Result.success(totalRestored)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 }

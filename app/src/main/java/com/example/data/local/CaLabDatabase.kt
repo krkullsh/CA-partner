@@ -179,6 +179,9 @@ interface StudyDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVerdict(verdict: VerdictEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllVerdicts(list: List<VerdictEntity>)
+
     @Query("SELECT * FROM verdicts ORDER BY createdAt DESC")
     fun getAllVerdicts(): Flow<List<VerdictEntity>>
 
@@ -200,11 +203,17 @@ interface StudyDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBookmark(bookmark: BookmarkEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllBookmarks(list: List<BookmarkEntity>)
+
     @Query("DELETE FROM bookmarks WHERE id = :id")
     suspend fun removeBookmark(id: String)
 
     @Query("SELECT * FROM bookmarks ORDER BY savedAt DESC")
     fun getAllBookmarks(): Flow<List<BookmarkEntity>>
+
+    @Query("SELECT * FROM bookmarks ORDER BY savedAt DESC")
+    suspend fun getBookmarksList(): List<BookmarkEntity>
 
     @Query("SELECT EXISTS(SELECT 1 FROM bookmarks WHERE id = :id)")
     suspend fun isBookmarked(id: String): Boolean
@@ -212,6 +221,9 @@ interface StudyDao {
     // Topic Progress tracking
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateProgress(progress: TopicProgressEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllProgress(list: List<TopicProgressEntity>)
 
     @Query("SELECT * FROM topic_progress WHERE topicId = :topicId")
     suspend fun getProgressForTopic(topicId: String): TopicProgressEntity?
@@ -241,6 +253,9 @@ interface StudyDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertErrorLog(errorLog: ErrorLogEntity): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAllErrorLogs(list: List<ErrorLogEntity>)
+
     @Query("SELECT * FROM error_log ORDER BY timestamp DESC")
     fun getAllErrorLogs(): Flow<List<ErrorLogEntity>>
 
@@ -261,10 +276,53 @@ interface StudyDao {
     suspend fun getCustomDifferencesList(): List<CustomDifferenceEntity>
 }
 
+val MIGRATION_1_5 = object : Migration(1, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        try {
+            db.execSQL("ALTER TABLE topic_progress ADD COLUMN teacherReadCompleted INTEGER NOT NULL DEFAULT 0")
+        } catch (_: Exception) {}
+        try {
+            db.execSQL("ALTER TABLE topic_progress ADD COLUMN swipeDrillStatus INTEGER NOT NULL DEFAULT 0")
+        } catch (_: Exception) {}
+    }
+}
+
+val MIGRATION_2_5 = object : Migration(2, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        try {
+            db.execSQL("ALTER TABLE topic_progress ADD COLUMN teacherReadCompleted INTEGER NOT NULL DEFAULT 0")
+        } catch (_: Exception) {}
+        try {
+            db.execSQL("ALTER TABLE topic_progress ADD COLUMN swipeDrillStatus INTEGER NOT NULL DEFAULT 0")
+        } catch (_: Exception) {}
+    }
+}
+
+val MIGRATION_3_5 = object : Migration(3, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        try {
+            db.execSQL("ALTER TABLE topic_progress ADD COLUMN teacherReadCompleted INTEGER NOT NULL DEFAULT 0")
+        } catch (_: Exception) {}
+        try {
+            db.execSQL("ALTER TABLE topic_progress ADD COLUMN swipeDrillStatus INTEGER NOT NULL DEFAULT 0")
+        } catch (_: Exception) {}
+    }
+}
+
 val MIGRATION_4_5 = object : Migration(4, 5) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL("ALTER TABLE topic_progress ADD COLUMN teacherReadCompleted INTEGER NOT NULL DEFAULT 0")
-        db.execSQL("ALTER TABLE topic_progress ADD COLUMN swipeDrillStatus INTEGER NOT NULL DEFAULT 0")
+        try {
+            db.execSQL("ALTER TABLE topic_progress ADD COLUMN teacherReadCompleted INTEGER NOT NULL DEFAULT 0")
+        } catch (_: Exception) {}
+        try {
+            db.execSQL("ALTER TABLE topic_progress ADD COLUMN swipeDrillStatus INTEGER NOT NULL DEFAULT 0")
+        } catch (_: Exception) {}
+    }
+}
+
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // No-op schema lock for V6
     }
 }
 
@@ -276,7 +334,7 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
         ErrorLogEntity::class,
         CustomDifferenceEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class CaLabDatabase : RoomDatabase() {
@@ -293,8 +351,8 @@ abstract class CaLabDatabase : RoomDatabase() {
                     CaLabDatabase::class.java,
                     "ca_lab_database.db"
                 )
-                .addMigrations(MIGRATION_4_5)
-                .fallbackToDestructiveMigration(dropAllTables = true)
+                .addMigrations(MIGRATION_1_5, MIGRATION_2_5, MIGRATION_3_5, MIGRATION_4_5, MIGRATION_5_6)
+                .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                 .build()
                 INSTANCE = instance
                 instance
