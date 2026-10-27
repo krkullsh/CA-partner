@@ -6,7 +6,7 @@ Built around the **Feynman Learning Technique** (*"You understand a provision or
 
 ---
 
-## Key Highlights (v5 Architecture)
+## Key Highlights (v6 Architecture)
 
 * **Sticky Study Context Bar & Dual Cataloguing**: Select your active Paper and Chapter once at the top of the app—your context stays locked across all 5 tabs. Switch anytime in Settings between **Official ICAI Module & Chapter Chronology** (default, zero memory fog) and **Exam Priority Tier View (Tiers 1–4)**, complete with `[🆕 Updated]` amendment badges.
 * **3-Stage Experience Slider (`Novice` | `Knowledged` | `Exam Ready`)**: Adapts explanation depth, Offline Teacher formatting, active-recall masking in Differences, and grading strictness in Teach Lab to match your current revision stage.
