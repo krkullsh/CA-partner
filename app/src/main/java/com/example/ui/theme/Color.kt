@@ -2,60 +2,75 @@ package com.example.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// WhatsApp & Facebook Palette
-val FbBlue = Color(0xFF1877F2)
-val WaTeal = Color(0xFF00A884)
-val WaTealDark = Color(0xFF075E54)
+// Modern Reader-First Editorial Palette (Distraction-Free)
+val EditorialBgLight = Color(0xFFF8FAFC)
+val EditorialBgDark = Color(0xFF0B0F19)
+val EditorialCardLight = Color(0xFFFFFFFF)
+val EditorialCardDark = Color(0xFF111827)
+val EditorialBorderLight = Color(0xFFE2E8F0)
+val EditorialBorderDark = Color(0xFF1E293B)
+val EditorialInk = Color(0xFF0F172A)
+val EditorialInkDarkTheme = Color(0xFFF1F5F9)
+val EditorialMuted = Color(0xFF64748B)
+val EditorialMutedDarkTheme = Color(0xFF94A3B8)
+val EditorialIndigo = Color(0xFF4F46E5)
+val EditorialIndigoContainer = Color(0xFFEEF2FF)
+val EditorialIndigoDarkContainer = Color(0xFF1E1B4B)
 
-// Light Theme Neutrals (Facebook Style)
-val FbLightBg = Color(0xFFF0F2F5)
-val FbLightSurface = Color(0xFFFFFFFF)
-val FbLightSurfaceVariant = Color(0xFFE4E6EB)
-val FbLightText = Color(0xFF050505)
-val FbLightSubtext = Color(0xFF65676B)
+// Core Brand Accents
+val FbBlue = EditorialIndigo
+val WaTeal = Color(0xFF0D9488)
+val WaTealDark = Color(0xFF115E59)
 
-// Dark Theme Neutrals (WhatsApp Dark Midnight Style)
-val WaDarkBg = Color(0xFF0B141A)
-val WaDarkSurface = Color(0xFF111B21)
-val WaDarkSurfaceVariant = Color(0xFF202C33)
-val WaDarkText = Color(0xFFE9EDEF)
-val WaDarkSubtext = Color(0xFF8696A0)
+// Light Theme Neutrals (Refined Editorial Style)
+val FbLightBg = EditorialBgLight
+val FbLightSurface = EditorialCardLight
+val FbLightSurfaceVariant = EditorialBorderLight
+val FbLightText = EditorialInk
+val FbLightSubtext = EditorialMuted
 
-// WhatsApp Chat Bubble Colors
-val WaUserBubbleLight = Color(0xFFD9FDD3)
-val WaUserBubbleDark = Color(0xFF005C4B)
+// Dark Theme Neutrals (Clean Slate Midnight Style)
+val WaDarkBg = EditorialBgDark
+val WaDarkSurface = EditorialCardDark
+val WaDarkSurfaceVariant = EditorialBorderDark
+val WaDarkText = EditorialInkDarkTheme
+val WaDarkSubtext = EditorialMutedDarkTheme
+
+// Chat Bubble Colors (Clean editorial cards)
+val WaUserBubbleLight = Color(0xFFEEF2FF)
+val WaUserBubbleDark = Color(0xFF312E81)
 val WaLabBubbleLight = Color(0xFFFFFFFF)
-val WaLabBubbleDark = Color(0xFF202C33)
+val WaLabBubbleDark = Color(0xFF1E293B)
 
 // Secondary & Sky Accent Colors
-val Sky500 = Color(0xFF0EA5E9)
-val Sky600 = Color(0xFF0284C7)
-val SkyLightContainer = Color(0xFFCFF4FC)
-val SkyLightText = Color(0xFF055160)
+val Sky500 = Color(0xFF0284C7)
+val Sky600 = Color(0xFF0369A1)
+val SkyLightContainer = Color(0xFFE0F2FE)
+val SkyLightText = Color(0xFF075985)
 
-// Soft Badge Tinted Containers & Solid Text Pairings
-val SuccessGreen = Color(0xFF0F5132)
-val SuccessGreenContainer = Color(0xFFD1E7DD)
+// Soft Status Badges & Containers
+val SuccessGreen = Color(0xFF059669)
+val SuccessGreenContainer = Color(0xFFD1FAE5)
 
-val ErrorRed = Color(0xFF842029)
-val ErrorRedContainer = Color(0xFFF8D7DA)
+val ErrorRed = Color(0xFFDC2626)
+val ErrorRedContainer = Color(0xFFFEE2E2)
 
-val Amber500 = Color(0xFF664D03)
-val Amber600 = Color(0xFFD97706)
-val Amber700 = Color(0xFFB45309)
-val Amber100 = Color(0xFFFFF3CD)
-val AmberContainer = Color(0xFFFFF3CD)
+val Amber500 = Color(0xFFD97706)
+val Amber600 = Color(0xFFB45309)
+val Amber700 = Color(0xFF92400E)
+val Amber100 = Color(0xFFFEF3C7)
+val AmberContainer = Color(0xFFFEF3C7)
 
-// Legacy Aliases for Seamless Code Compatibility
-val Slate950 = WaDarkBg
-val Slate900 = WaDarkSurface
-val Slate800 = WaDarkSurfaceVariant
-val Slate700 = FbLightSubtext
+// Slate Hierarchy Aliases
+val Slate950 = EditorialBgDark
+val Slate900 = EditorialCardDark
+val Slate800 = EditorialBorderDark
+val Slate700 = EditorialMuted
 val Slate600 = Color(0xFF475569)
-val Slate200 = FbLightSurfaceVariant
-val Slate100 = FbLightBg
-val Slate50 = FbLightSurface
+val Slate200 = EditorialBorderLight
+val Slate100 = EditorialBgLight
+val Slate50 = EditorialCardLight
 
 val Cyan500 = Color(0xFF06B6D4)
 val Cyan600 = Color(0xFF0891B2)
-val WarningOrange = Color(0xFFF97316)
+val WarningOrange = Color(0xFFEA580C)
