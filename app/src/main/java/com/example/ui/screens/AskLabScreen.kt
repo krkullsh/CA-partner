@@ -11,8 +11,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,23 +29,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.automirrored.filled.FactCheck
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -70,6 +68,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -111,6 +111,89 @@ fun SubjectArchetype.displayName(): String = when (this) {
     SubjectArchetype.STRATEGIC_FRAMEWORKS -> "Strategic Frameworks"
 }
 
+/**
+ * Modern Notion-Style borderless left-accent callout strip for dark mode safety & clean reading.
+ */
+@Composable
+fun NotionCallout(
+    accentColor: Color,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(accentColor.copy(alpha = 0.08f))
+            .drawBehind {
+                drawLine(
+                    color = accentColor,
+                    start = Offset(1.5.dp.toPx(), 0f),
+                    end = Offset(1.5.dp.toPx(), size.height),
+                    strokeWidth = 3.dp.toPx()
+                )
+            }
+            .padding(start = 11.dp, end = 9.dp, top = 8.dp, bottom = 8.dp)
+    ) {
+        Column(content = content)
+    }
+}
+
+/**
+ * Tap-to-Reveal inline masking helper for numbers, limits, and sections.
+ */
+@Composable
+fun MaskableNoteText(
+    text: String,
+    isMasked: Boolean,
+    modifier: Modifier = Modifier,
+    style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodySmall,
+    lineHeight: androidx.compose.ui.unit.TextUnit = 18.sp
+) {
+    if (!isMasked) {
+        FormattedText(text = text, style = style, lineHeight = lineHeight, modifier = modifier)
+        return
+    }
+
+    var isRevealed by remember(text, isMasked) { mutableStateOf(false) }
+    val regex = remember {
+        Regex("""(₹\s?[\d,]+(?:\.\d+)?|\b\d+(?:\.\d+)?%|\bSec(?:tion)?\s+\d+[A-Za-z0-9()]*|\bPara(?:graph)?\s+\d+[A-Za-z0-9()]*|\bAS\s+\d+|\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b)""")
+    }
+
+    val maskedText = remember(text) {
+        regex.replace(text) { "[ 🔒 ??? ]" }
+    }
+
+    Column(modifier = modifier) {
+        FormattedText(
+            text = if (isRevealed) text else maskedText,
+            style = style,
+            lineHeight = lineHeight
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = if (isRevealed) Amber500.copy(alpha = 0.14f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                modifier = Modifier
+                    .clickable { isRevealed = !isRevealed }
+                    .padding(vertical = 1.dp)
+            ) {
+                Text(
+                    text = if (isRevealed) "🔒 Mask Limits" else "👁 Tap to Reveal Numbers",
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isRevealed) Amber500 else MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun AskLabScreen(viewModel: CaLabViewModel) {
     val state by viewModel.askState.collectAsState()
@@ -126,6 +209,7 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
     var showBlueprintDialog by remember { mutableStateOf(false) }
     var showToolsDropdown by remember { mutableStateOf(false) }
     var showSearchBox by remember { mutableStateOf(false) }
+    var maskNumbersAndLimits by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
 
@@ -165,252 +249,238 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
             .testTag("ask_lab_screen"),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        // ITEM 0: ULTRA-COMPACT SINGLE-LINE CONTEXT STRIP + HIDDEN TOOLS DROPDOWN
+        // =========================================================================
+        // ITEM 0: ULTRA-COMPACT 28.DP HEADER ROW (NO DUPLICATE TOPIC TITLE)
+        // Left (weight 1f): 3-tab segmented switcher [Teacher (PYQ)] | [Chapter Notes] | [Practice Qs]
+        // Right: Compact 26.dp [Tools ▾] dropdown button
+        // =========================================================================
         item {
             Spacer(modifier = Modifier.height(2.dp))
-            Card(
-                shape = RoundedCornerShape(8.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("compact_topic_header_card")
+                    .height(28.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)) {
+                // Left 3-tab Segmented Switcher
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .testTag("study_segmented_modes")
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(2.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Left: Only Book Short Tag + Chapter & Topic Name (1 Line)
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
+                        StudyAskSubTab.entries.forEach { tab ->
+                            val isSelected = activeSubTab == tab
                             Surface(
                                 shape = RoundedCornerShape(4.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer
+                                color = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent,
+                                shadowElevation = if (isSelected) 0.5.dp else 0.dp,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clickable { activeSubTab = tab }
+                                    .testTag("tab_${tab.name.lowercase()}")
                             ) {
-                                Text(
-                                    text = activePaper.shortName,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "${activeTopic.chapter} • ${activeTopic.topicName}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        // Right: Compact Probability Tag + Single [Tools ▾] Dropdown Button
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = Amber500.copy(alpha = 0.12f)
-                            ) {
-                                Text(
-                                    text = "${activeTopic.averageMarks.toInt()}M",
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Amber500,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                )
-                            }
-
-                            Box {
-                                Surface(
-                                    shape = RoundedCornerShape(5.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
-                                    modifier = Modifier
-                                        .height(24.dp)
-                                        .clickable { showToolsDropdown = true }
-                                        .testTag("header_open_blueprint_button")
+                                Row(
+                                    modifier = Modifier.fillMaxSize(),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(
-                                            text = "Tools",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Icon(
-                                            imageVector = Icons.Default.MoreVert,
-                                            contentDescription = "Tools & Filters",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                    }
-                                }
-
-                                DropdownMenu(
-                                    expanded = showToolsDropdown,
-                                    onDismissRequest = { showToolsDropdown = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text(if (showSearchBox) "Hide Doubt Search" else "Ask Doubt / Search Concept", fontSize = 12.sp) },
-                                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(15.dp)) },
-                                        onClick = {
-                                            showSearchBox = !showSearchBox
-                                            showToolsDropdown = false
-                                        }
+                                    Icon(
+                                        imageVector = tab.icon,
+                                        contentDescription = null,
+                                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(11.dp)
                                     )
-                                    DropdownMenuItem(
-                                        text = { Text("Open Paper Strategy Blueprint", fontSize = 12.sp) },
-                                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(15.dp)) },
-                                        onClick = {
-                                            showBlueprintDialog = true
-                                            showToolsDropdown = false
-                                        }
-                                    )
-                                    val isBookmarked = bookmarkedIds.contains(activeTopic.id)
-                                    DropdownMenuItem(
-                                        text = { Text(if (isBookmarked) "Remove Bookmark" else "Bookmark Topic", fontSize = 12.sp) },
-                                        leadingIcon = {
-                                            Icon(
-                                                if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(15.dp)
-                                            )
-                                        },
-                                        onClick = {
-                                            viewModel.toggleBookmark(
-                                                activeTopic.id,
-                                                "TOPIC",
-                                                activeTopic.topicName,
-                                                activeTopic.paper.title
-                                            )
-                                            showToolsDropdown = false
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Copy Chapter Notes", fontSize = 12.sp) },
-                                        leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp)) },
-                                        onClick = {
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            clipboard.setPrimaryClip(
-                                                ClipData.newPlainText(
-                                                    "CA-Lab Note",
-                                                    "${activeTopic.topicName}\n\n${activeTopic.keyProvisions.joinToString("\n• ", prefix = "• ")}"
-                                                )
-                                            )
-                                            Toast.makeText(context, "Copied notes to clipboard!", Toast.LENGTH_SHORT).show()
-                                            showToolsDropdown = false
-                                        }
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = tab.label,
+                                        fontSize = 10.5.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
                         }
                     }
+                }
 
-                    // Collapsible Search / Doubt Input (Hidden by default to save screen space)
-                    AnimatedVisibility(visible = showSearchBox) {
-                        Column {
-                            Spacer(modifier = Modifier.height(6.dp))
-                            OutlinedTextField(
-                                value = state.customQuery,
-                                onValueChange = { viewModel.updateAskCustomQuery(it) },
-                                placeholder = { Text("Search concept or ask specific doubt...", fontSize = 11.sp) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(42.dp)
-                                    .testTag("ask_search_field"),
-                                shape = RoundedCornerShape(6.dp),
-                                trailingIcon = {
-                                    IconButton(
-                                        onClick = { viewModel.searchOrGenerateExplanation() },
-                                        modifier = Modifier
-                                            .size(28.dp)
-                                            .testTag("ask_search_button")
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Search,
-                                            contentDescription = "Search",
-                                            modifier = Modifier.size(15.dp),
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                },
-                                singleLine = true,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                                )
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Right: Compact 26.dp [Tools ▾] Dropdown Button
+                Box {
+                    Surface(
+                        shape = RoundedCornerShape(5.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                        modifier = Modifier
+                            .height(26.dp)
+                            .clickable { showToolsDropdown = true }
+                            .testTag("header_open_blueprint_button")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 7.dp)
+                        ) {
+                            Text(
+                                text = "Tools",
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Tools & Filters",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(13.dp)
                             )
                         }
+                    }
+
+                    DropdownMenu(
+                        expanded = showToolsDropdown,
+                        onDismissRequest = { showToolsDropdown = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = if (maskNumbersAndLimits) "✓ Mask Numbers & Limits: ON" else "Mask Numbers & Limits: OFF",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (maskNumbersAndLimits) Icons.Default.Lock else Icons.Default.Visibility,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            },
+                            onClick = {
+                                maskNumbersAndLimits = !maskNumbersAndLimits
+                                showToolsDropdown = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = if (showSearchBox) "Hide Doubt Search" else "Ask Doubt / Search Concept",
+                                    fontSize = 11.5.sp
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(15.dp))
+                            },
+                            onClick = {
+                                showSearchBox = !showSearchBox
+                                showToolsDropdown = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Strategy Blueprint", fontSize = 11.5.sp) },
+                            leadingIcon = {
+                                Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = null, modifier = Modifier.size(15.dp))
+                            },
+                            onClick = {
+                                showBlueprintDialog = true
+                                showToolsDropdown = false
+                            }
+                        )
+                        val isBookmarked = bookmarkedIds.contains(activeTopic.id)
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = if (isBookmarked) "Remove Bookmark" else "Bookmark Topic",
+                                    fontSize = 11.5.sp
+                                )
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(15.dp),
+                                    tint = if (isBookmarked) Amber500 else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            onClick = {
+                                viewModel.toggleBookmark(
+                                    activeTopic.id,
+                                    "TOPIC",
+                                    activeTopic.topicName,
+                                    activeTopic.paper.title
+                                )
+                                showToolsDropdown = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Copy Chapter Notes", fontSize = 11.5.sp) },
+                            leadingIcon = {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
+                            },
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.setPrimaryClip(
+                                    ClipData.newPlainText(
+                                        "CA-Lab Note",
+                                        "${activeTopic.topicName}\n\n${activeTopic.keyProvisions.joinToString("\n• ", prefix = "• ")}"
+                                    )
+                                )
+                                Toast.makeText(context, "Copied notes to clipboard!", Toast.LENGTH_SHORT).show()
+                                showToolsDropdown = false
+                            }
+                        )
                     }
                 }
             }
         }
 
-        // ITEM 1: COMPACT 26.DP 3-TAB STRIP
-        item {
-            Surface(
-                shape = RoundedCornerShape(7.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("study_segmented_modes")
-            ) {
-                Row(
+        // Inline Search Box (Toggled from Tools Dropdown)
+        if (showSearchBox) {
+            item {
+                OutlinedTextField(
+                    value = state.customQuery,
+                    onValueChange = { viewModel.updateAskCustomQuery(it) },
+                    placeholder = { Text("Search concept or ask specific doubt...", fontSize = 11.sp) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(2.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    StudyAskSubTab.entries.forEach { tab ->
-                        val isSelected = activeSubTab == tab
-                        Surface(
-                            shape = RoundedCornerShape(5.dp),
-                            color = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent,
-                            shadowElevation = if (isSelected) 0.5.dp else 0.dp,
+                        .height(42.dp)
+                        .testTag("ask_search_field"),
+                    shape = RoundedCornerShape(6.dp),
+                    trailingIcon = {
+                        IconButton(
+                            onClick = { viewModel.searchOrGenerateExplanation() },
                             modifier = Modifier
-                                .weight(1f)
-                                .height(26.dp)
-                                .clickable { activeSubTab = tab }
-                                .testTag("tab_${tab.name.lowercase()}")
+                                .size(28.dp)
+                                .testTag("ask_search_button")
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxSize(),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = tab.icon,
-                                    contentDescription = null,
-                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = tab.label,
-                                    fontSize = 10.5.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = "Search",
+                                modifier = Modifier.size(15.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                         }
-                    }
-                }
+                    },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    )
+                )
             }
         }
 
@@ -418,7 +488,7 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
         // TAB 1: TEACHER (PYQ RADAR — WHAT TOPICS EXIST & WHAT CAME IN PAST PAPERS)
         // =========================================================================
         if (activeSubTab == StudyAskSubTab.TEACHER_PYQ_RADAR) {
-            // Compact Reading Outline Scrub Bar (24dp pills)
+            // Compact Reading Outline Scrub Bar (23dp pills)
             item {
                 LazyRow(
                     modifier = Modifier
@@ -461,7 +531,7 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
                 Card(
                     shape = RoundedCornerShape(8.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(0.5.dp, Amber500.copy(alpha = 0.35f)),
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
@@ -538,27 +608,22 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
                             }
 
                             Spacer(modifier = Modifier.height(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = ErrorRed.copy(alpha = 0.06f),
-                                border = BorderStroke(0.5.dp, ErrorRed.copy(alpha = 0.25f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(8.dp)) {
+                            // Notion-Style Examiner Loss Point Strip
+                            NotionCallout(accentColor = ErrorRed) {
+                                Text(
+                                    text = "⚠️ HOW STUDENTS LOSE MARKS (EXAMINER OBSERVATIONS):",
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ErrorRed
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
+                                radar.howStudentsLoseMarks.forEach { loss ->
                                     Text(
-                                        text = "⚠️ HOW STUDENTS LOSE MARKS (EXAMINER OBSERVATIONS):",
-                                        fontSize = 9.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = ErrorRed
+                                        text = "• $loss",
+                                        fontSize = 10.5.sp,
+                                        lineHeight = 15.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
-                                    radar.howStudentsLoseMarks.forEach { loss ->
-                                        Text(
-                                            text = "• $loss",
-                                            fontSize = 10.5.sp,
-                                            lineHeight = 15.sp,
-                                            color = MaterialTheme.colorScheme.onSurface
-                                        )
-                                    }
                                 }
                             }
                         }
@@ -606,7 +671,7 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
                 Card(
                     shape = RoundedCornerShape(8.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(0.5.dp, Amber500.copy(alpha = 0.35f)),
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("teacher_section_3")
@@ -705,7 +770,7 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
         }
 
         // =========================================================================
-        // TAB 2: CHAPTER NOTES (LITERAL CHAPTER SUBSTANCE — NO TIER FLUFF)
+        // TAB 2: CHAPTER NOTES (LITERAL CHAPTER SUBSTANCE + MASK NUMBERS & LIMITS)
         // =========================================================================
         if (activeSubTab == StudyAskSubTab.CHAPTER_NOTES) {
             item {
@@ -718,12 +783,32 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
                         .testTag("chapter_notes_card")
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "Chapter Reference Notes — ${activeTopic.topicName}",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Chapter Reference Notes — ${activeTopic.topicName}",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (maskNumbersAndLimits) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Amber500.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = "🔒 MASKED",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Amber500,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
                         Spacer(modifier = Modifier.height(6.dp))
 
                         // 1. Exact Statutory Provisions & ICAI Criteria
@@ -734,8 +819,9 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        FormattedText(
+                        MaskableNoteText(
                             text = activeTopic.keyProvisions.joinToString("\n• ", prefix = "• "),
+                            isMasked = maskNumbersAndLimits,
                             style = MaterialTheme.typography.bodySmall,
                             lineHeight = 19.sp
                         )
@@ -753,43 +839,31 @@ fun AskLabScreen(viewModel: CaLabViewModel) {
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text(
+                            MaskableNoteText(
                                 text = section.coreRuleOrProvision,
-                                fontSize = 11.5.sp,
-                                lineHeight = 18.sp,
-                                color = MaterialTheme.colorScheme.onSurface
+                                isMasked = maskNumbersAndLimits,
+                                style = MaterialTheme.typography.bodySmall,
+                                lineHeight = 18.sp
                             )
 
                             Spacer(modifier = Modifier.height(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
+                            NotionCallout(accentColor = Sky500) {
                                 Text(
                                     text = section.formulaOrAccountingLogic,
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 10.5.sp,
                                     lineHeight = 16.sp,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(8.dp)
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
 
                             Spacer(modifier = Modifier.height(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = Amber500.copy(alpha = 0.07f),
-                                border = BorderStroke(0.5.dp, Amber500.copy(alpha = 0.25f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
+                            NotionCallout(accentColor = Amber500) {
                                 Text(
                                     text = "💡 Common Student Confusion: ${section.commonStudentConfusion}",
                                     fontSize = 10.5.sp,
                                     lineHeight = 16.sp,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.padding(8.dp)
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
@@ -926,64 +1000,58 @@ fun SpotTheTrapMiniCard(
     if (scenario == null) return
     var isRevealed by remember(scenario.id) { mutableStateOf(false) }
 
-    Card(
-        shape = RoundedCornerShape(6.dp),
-        colors = CardDefaults.cardColors(containerColor = Amber500.copy(alpha = 0.05f)),
-        border = BorderStroke(0.5.dp, Amber500.copy(alpha = 0.35f)),
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("spot_trap_mini_card")
+    NotionCallout(
+        accentColor = Amber500,
+        modifier = modifier.testTag("spot_trap_mini_card")
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "⚠️ Case Trap: ${scenario.title}",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(0.5.dp, Amber500.copy(alpha = 0.5f)),
+                modifier = Modifier
+                    .height(22.dp)
+                    .clickable { isRevealed = !isRevealed }
+                    .testTag("toggle_trap_reveal_button")
             ) {
                 Text(
-                    text = "⚠️ Case Trap: ${scenario.title}",
-                    fontSize = 11.sp,
+                    text = if (isRevealed) "Hide ▲" else "Check ICAI Fix ▼",
+                    fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
+                    color = Amber500,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                 )
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(0.5.dp, Amber500),
-                    modifier = Modifier
-                        .height(22.dp)
-                        .clickable { isRevealed = !isRevealed }
-                        .testTag("toggle_trap_reveal_button")
-                ) {
-                    Text(
-                        text = if (isRevealed) "Hide ▲" else "Check ICAI Fix ▼",
-                        fontSize = 9.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Amber500,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
             }
+        }
 
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = scenario.caseSnippet,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                lineHeight = 16.sp
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = scenario.caseSnippet,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            lineHeight = 16.sp
+        )
+
+        if (isRevealed) {
+            Spacer(modifier = Modifier.height(6.dp))
+            HorizontalDivider(thickness = 0.5.dp, color = Amber500.copy(alpha = 0.25f))
+            Spacer(modifier = Modifier.height(6.dp))
+            FormattedText(
+                text = scenario.correctIcaiProvision,
+                style = MaterialTheme.typography.bodySmall,
+                lineHeight = 17.sp
             )
-
-            if (isRevealed) {
-                Spacer(modifier = Modifier.height(6.dp))
-                HorizontalDivider(thickness = 0.5.dp, color = Amber500.copy(alpha = 0.25f))
-                Spacer(modifier = Modifier.height(6.dp))
-                FormattedText(
-                    text = scenario.correctIcaiProvision,
-                    style = MaterialTheme.typography.bodySmall,
-                    lineHeight = 17.sp
-                )
-            }
         }
     }
 }
@@ -1069,7 +1137,8 @@ fun CollapsiblePracticeQuestionsCard(
                         Text(
                             text = "Q${activeQuestionIndex + 1}/${questions.size}",
                             fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Surface(
                             shape = RoundedCornerShape(4.dp),
@@ -1098,6 +1167,7 @@ fun CollapsiblePracticeQuestionsCard(
                                 Icon(
                                     imageVector = if (isTimerRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(11.dp)
                                 )
                                 Spacer(modifier = Modifier.width(2.dp))
@@ -1105,6 +1175,7 @@ fun CollapsiblePracticeQuestionsCard(
                                     text = timeString,
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.testTag("practice_timer_text")
                                 )
                             }
@@ -1163,17 +1234,14 @@ fun CollapsiblePracticeQuestionsCard(
 
                 if (isHintVisible) {
                     Spacer(modifier = Modifier.height(6.dp))
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = Amber500.copy(alpha = 0.08f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("active_provision_hint_banner")
+                    NotionCallout(
+                        accentColor = Amber500,
+                        modifier = Modifier.testTag("active_provision_hint_banner")
                     ) {
                         Text(
                             text = hintText ?: "💡 Look up key thresholds and statutory conditions.",
                             style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.padding(8.dp)
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
@@ -1183,7 +1251,8 @@ fun CollapsiblePracticeQuestionsCard(
                 Text(
                     text = currentQuestion.questionText,
                     style = MaterialTheme.typography.bodyMedium,
-                    lineHeight = 20.sp
+                    lineHeight = 20.sp,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1196,12 +1265,16 @@ fun CollapsiblePracticeQuestionsCard(
                         .fillMaxWidth()
                         .height(80.dp)
                         .testTag("practice_draft_input"),
-                    shape = RoundedCornerShape(6.dp)
+                    shape = RoundedCornerShape(6.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    )
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Compact 26.dp Reveal Button
+                // Compact 28.dp Reveal Button
                 Surface(
                     shape = RoundedCornerShape(6.dp),
                     color = if (isAnswerRevealed) SuccessGreen else MaterialTheme.colorScheme.primary,
@@ -1258,14 +1331,14 @@ fun CollapsiblePracticeQuestionsCard(
                             )
                             if (currentQuestion.examinerObservations.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(6.dp))
-                                HorizontalDivider(thickness = 0.5.dp, color = ErrorRed.copy(alpha = 0.25f))
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "⚠️ Examiner Observation: ${currentQuestion.examinerObservations}",
-                                    fontSize = 10.5.sp,
-                                    lineHeight = 16.sp,
-                                    color = ErrorRed
-                                )
+                                NotionCallout(accentColor = ErrorRed) {
+                                    Text(
+                                        text = "⚠️ Examiner Observation: ${currentQuestion.examinerObservations}",
+                                        fontSize = 10.5.sp,
+                                        lineHeight = 16.sp,
+                                        color = ErrorRed
+                                    )
+                                }
                             }
                         }
                     }

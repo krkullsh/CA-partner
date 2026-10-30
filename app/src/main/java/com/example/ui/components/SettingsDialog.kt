@@ -14,8 +14,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.WifiOff
@@ -49,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.example.data.model.CatalogSortOrder
 import com.example.data.model.ExperienceLevel
+import com.example.data.model.ThemeMode
 import com.example.ui.theme.Amber500
 import com.example.ui.theme.Sky500
 import com.example.ui.theme.SuccessGreen
@@ -69,6 +73,7 @@ fun SettingsDialog(
 
     val experienceLevel by viewModel.experienceLevel.collectAsState()
     val catalogSortOrder by viewModel.catalogSortOrder.collectAsState()
+    val themeMode by viewModel.themeMode.collectAsState()
 
     val clipboardManager = LocalClipboardManager.current
     var backupStatusMessage by remember { mutableStateOf<String?>(null) }
@@ -103,6 +108,66 @@ fun SettingsDialog(
                     IconButton(onClick = onDismiss, modifier = Modifier.testTag("close_settings_button")) {
                         Icon(Icons.Default.Close, contentDescription = "Close")
                     }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Appearance & Theme Quick Toggle
+                Text("Appearance & Theme", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    ThemeMode.entries.forEach { mode ->
+                        val isSelected = themeMode == mode
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { viewModel.setThemeMode(mode) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = when (mode) {
+                                        ThemeMode.LIGHT -> Icons.Default.LightMode
+                                        ThemeMode.DARK -> Icons.Default.DarkMode
+                                        ThemeMode.SYSTEM -> Icons.Default.BrightnessAuto
+                                    },
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            label = {
+                                Text(
+                                    text = mode.title,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("theme_mode_${mode.name.lowercase()}")
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = when (themeMode) {
+                            ThemeMode.SYSTEM -> "⚙️ System: Automatically matches your device's light or dark mode theme."
+                            ThemeMode.LIGHT -> "☀️ Light Mode: Crisp editorial light palette for well-lit study environments."
+                            ThemeMode.DARK -> "🌙 Dark Mode: High-contrast slate dark palette for night revisions."
+                        },
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 15.sp,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))

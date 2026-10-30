@@ -9,12 +9,13 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,7 +25,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -75,6 +75,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -105,6 +107,34 @@ import com.example.ui.viewmodel.CaLabViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/**
+ * Modern Notion-Style borderless left-accent callout strip for dark mode safety & clean reading.
+ */
+@Composable
+private fun DiffNotionCallout(
+    accentColor: Color,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(accentColor.copy(alpha = 0.08f))
+            .drawBehind {
+                drawLine(
+                    color = accentColor,
+                    start = Offset(1.5.dp.toPx(), 0f),
+                    end = Offset(1.5.dp.toPx(), size.height),
+                    strokeWidth = 3.dp.toPx()
+                )
+            }
+            .padding(start = 11.dp, end = 9.dp, top = 8.dp, bottom = 8.dp)
+    ) {
+        Column(content = content)
+    }
+}
 
 @Composable
 fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
@@ -148,6 +178,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
 
     var modeSubTab by remember { mutableIntStateOf(0) } // 0 = Concept vs Concept, 1 = Excel Matrix & Drill
     var activeMatrixPaper by remember { mutableStateOf(state.selectedPaper ?: PaperCode.PAPER_1) }
+    var selectedMatrixCategory by remember { mutableStateOf("All Rows") }
     var matrixSearchQuery by remember { mutableStateOf("") }
 
     var tapToRecallMode by remember {
@@ -246,7 +277,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
 
             Spacer(modifier = Modifier.width(6.dp))
 
-            // Single Compact [Filter ▾] Dropdown (Hides all secondary buttons & filters)
+            // Single Compact [Filter ▾] Dropdown (Hides all secondary buttons & matrix categories)
             Box {
                 Surface(
                     shape = RoundedCornerShape(6.dp),
@@ -283,7 +314,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                         text = {
                             Text(
                                 if (tapToRecallMode) "✓ Tap-to-Recall Masking: ON" else "Tap-to-Recall Masking: OFF",
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
                         },
@@ -303,7 +334,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                         text = {
                             Text(
                                 if (showSearchAndAiPanel) "Hide Search & AI Compare" else "Search / Compare 2 Topics (AI)",
-                                fontSize = 12.sp
+                                fontSize = 11.5.sp
                             )
                         },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(15.dp)) },
@@ -316,7 +347,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                         text = {
                             Text(
                                 if (state.showBookmarkedOnly) "✓ Showing Bookmarked Only" else "Show Bookmarked Only",
-                                fontSize = 12.sp
+                                fontSize = 11.5.sp
                             )
                         },
                         leadingIcon = {
@@ -332,8 +363,26 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                         }
                     )
                     HorizontalDivider(thickness = 0.5.dp)
+                    // Matrix Categories inside filter dropdown
+                    listOf("All Rows", "Statutory Limits", "Blueprint Tables").forEach { cat ->
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = if (selectedMatrixCategory == cat) "✓ Category: $cat" else "Category: $cat",
+                                    fontSize = 11.sp,
+                                    fontWeight = if (selectedMatrixCategory == cat) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (selectedMatrixCategory == cat) Amber500 else MaterialTheme.colorScheme.onSurface
+                                )
+                            },
+                            onClick = {
+                                selectedMatrixCategory = cat
+                                showFilterDropdown = false
+                            }
+                        )
+                    }
+                    HorizontalDivider(thickness = 0.5.dp)
                     DropdownMenuItem(
-                        text = { Text("All 6 Papers (${allDifferences.size})", fontSize = 11.5.sp) },
+                        text = { Text("All 6 Papers (${allDifferences.size})", fontSize = 11.sp) },
                         onClick = {
                             viewModel.selectDiffPaper(null)
                             showFilterDropdown = false
@@ -341,7 +390,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                     )
                     PaperCode.entries.forEach { paper ->
                         DropdownMenuItem(
-                            text = { Text(paper.title, fontSize = 11.5.sp) },
+                            text = { Text(paper.title, fontSize = 11.sp) },
                             onClick = {
                                 viewModel.selectDiffPaper(paper)
                                 activeMatrixPaper = paper
@@ -385,7 +434,11 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                                         .testTag("diff_search_field"),
                                     shape = RoundedCornerShape(6.dp),
                                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(15.dp)) },
-                                    singleLine = true
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                    )
                                 )
 
                                 Spacer(modifier = Modifier.height(6.dp))
@@ -447,45 +500,49 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                     }
                 }
 
-                // Compact Horizontal Topic Selector Strip (26.dp pills)
+                // Compact Single-Line Horizontal Topic Selector Strip (height 26.dp)
                 item {
                     LazyRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(26.dp),
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         items(filteredDifferences, key = { it.id }) { diff ->
                             val isSelected = currentDiff?.id == diff.id
                             val isFromNotes = noteComparisonMap.containsKey(diff.id)
                             Surface(
-                                shape = RoundedCornerShape(6.dp),
+                                shape = RoundedCornerShape(5.dp),
                                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
                                 border = BorderStroke(
                                     0.5.dp,
                                     if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
                                 ),
                                 modifier = Modifier
-                                    .height(28.dp)
+                                    .fillMaxHeight()
                                     .clickable { viewModel.selectDifference(diff) }
                                     .testTag("diff_item_${diff.id}")
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                    modifier = Modifier.padding(horizontal = 7.dp)
                                 ) {
                                     if (isFromNotes) {
                                         Text(
                                             text = "★ ",
-                                            fontSize = 10.sp,
+                                            fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (isSelected) Color.White else Amber500
                                         )
                                     }
                                     Text(
                                         text = "${diff.conceptA} vs ${diff.conceptB}",
-                                        fontSize = 10.5.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                         color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                             }
@@ -562,7 +619,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                         }
                     }
 
-                    // Basis-First Stacked Cards
+                    // Basis-First Stacked Cards (with NotionCallout and auto-bookmark on review)
                     items(currentDiff.comparisonPoints.indices.toList(), key = { "basis_$it" }) { index ->
                         val row = currentDiff.comparisonPoints[index]
                         BasisFirstStackedCard(
@@ -570,7 +627,17 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                             row = row,
                             conceptAName = currentDiff.conceptA,
                             conceptBName = currentDiff.conceptB,
-                            isTapToRecall = tapToRecallMode
+                            isTapToRecall = tapToRecallMode,
+                            onReviewTapped = {
+                                if (!bookmarkedIds.contains(currentDiff.id)) {
+                                    viewModel.toggleBookmark(
+                                        currentDiff.id,
+                                        "DIFFERENCE",
+                                        currentDiff.title,
+                                        currentDiff.paper.title
+                                    )
+                                }
+                            }
                         )
                     }
 
@@ -592,8 +659,6 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
             // SUB-MODE B: PROGRESSIVE EXCEL MATRIX & TINDER SWIPE DRILL
             // =================================================================
             val context = LocalContext.current
-            var selectedMatrixCategory by remember { mutableStateOf("All Rows") }
-            val matrixCategories = remember { listOf("All Rows", "Statutory Limits", "Blueprint Tables") }
 
             val fullMatrixState by produceState<StatutoryCheatMatrix?>(
                 initialValue = CuratedDifferences.getMatrixForPaper(activeMatrixPaper),
@@ -609,71 +674,18 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Compact Top Bar: Category Filter + [Swipe Drill] Toggle (24.dp)
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        LazyRow(
-                            modifier = Modifier.weight(1f),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            items(matrixCategories) { cat ->
-                                val isSelected = selectedMatrixCategory == cat
-                                Surface(
-                                    shape = RoundedCornerShape(5.dp),
-                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.28f)),
-                                    modifier = Modifier
-                                        .height(24.dp)
-                                        .clickable { selectedMatrixCategory = cat }
-                                        .testTag("matrix_cat_${cat.replace(" ", "_").lowercase()}")
-                                ) {
-                                    Text(
-                                        text = cat,
-                                        fontSize = 10.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        Surface(
-                            shape = RoundedCornerShape(5.dp),
-                            color = if (isSwipeDrillActive) Amber500 else MaterialTheme.colorScheme.primaryContainer,
-                            modifier = Modifier
-                                .height(24.dp)
-                                .clickable { isSwipeDrillActive = !isSwipeDrillActive }
-                                .testTag("toggle_swipe_drill_button")
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 7.dp)
-                            ) {
-                                Text(
-                                    text = if (isSwipeDrillActive) "Table View" else "🔥 Swipe Drill",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 10.sp,
-                                    color = if (isSwipeDrillActive) Color.Black else MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                        }
-                    }
-                }
-
                 if (isSwipeDrillActive) {
                     item {
                         val drillTopics = remember(activeMatrixPaper) {
                             CaSyllabusData.getTopicsForPaper(activeMatrixPaper)
                         }
                         val drillRows = remember(matrix) {
-                            matrix?.rows?.take(20) ?: emptyList()
+                            matrix?.rows?.filterNot { row ->
+                                row.sectionOrClause.contains("Col 1", ignoreCase = true) ||
+                                row.provisionName.contains("Col 2", ignoreCase = true) ||
+                                row.sectionOrClause.contains("---") ||
+                                row.sectionOrClause.startsWith("Statutory Test", ignoreCase = true)
+                            }?.take(20) ?: emptyList()
                         }
 
                         TinderSwipeDrillSection(
@@ -686,7 +698,8 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                             },
                             onSwipeNeedPractice = { topicId ->
                                 viewModel.recordSwipeDrillStatus(topicId, 1)
-                            }
+                            },
+                            onBackToTable = { isSwipeDrillActive = false }
                         )
                     }
                 } else {
@@ -702,7 +715,11 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                                     .testTag("matrix_search_field"),
                                 shape = RoundedCornerShape(6.dp),
                                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(15.dp)) },
-                                singleLine = true
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                                )
                             )
                         }
                     }
@@ -712,7 +729,9 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
                             ProgressiveMemoryMatrixCard(
                                 matrix = matrix,
                                 filterQuery = matrixSearchQuery,
-                                selectedCategory = selectedMatrixCategory
+                                selectedCategory = selectedMatrixCategory,
+                                isSwipeDrillActive = isSwipeDrillActive,
+                                onToggleSwipeDrill = { isSwipeDrillActive = !isSwipeDrillActive }
                             )
                         }
                     }
@@ -724,8 +743,7 @@ fun SpotDifferenceScreen(viewModel: CaLabViewModel) {
 
 /**
  * EXAM-BASED QUESTION (PYQ / RTP APPLICATION) CARD
- * Uses the exact question, step-by-step ICAI answer, and Examiner Observation from
- * IntegratedNotesRepository when available, or constructs a provision-specific exam case.
+ * Uses exact question and solution without robotic repetition or "Reserve Reserve" phrasing.
  */
 @Composable
 fun ExamApplicationDifferenceCard(
@@ -736,24 +754,16 @@ fun ExamApplicationDifferenceCard(
     var isSolutionRevealed by remember(diff.id) { mutableStateOf(false) }
 
     val questionText = noteComparison?.examBasedQuestion
-        ?: buildString {
-            val firstBasis = diff.comparisonPoints.firstOrNull()
-            append("EXAM QUESTION (${diff.paper.shortName} • ${diff.pastExamFrequency}):\n")
-            append("Distinguish between '${diff.conceptA}' and '${diff.conceptB}' specifically with respect to ")
-            append(diff.comparisonPoints.joinToString(", ") { "'${it.basisOfDifference}'" })
-            append(". Also state how an entity should account for / comply when ")
-            append(firstBasis?.conceptAValue?.lowercase() ?: "statutory thresholds are triggered")
-            append(".")
-        }
+        ?: "EXAM QUESTION (${diff.paper.shortName} • ${diff.pastExamFrequency}):\nExplain the key statutory and accounting distinctions between '${diff.conceptA}' and '${diff.conceptB}' with reference to ${diff.comparisonPoints.take(3).joinToString(", ") { it.basisOfDifference }}. How do these differences impact financial statement presentation or compliance?"
 
     val solutionText = noteComparison?.icaiExamSolution
         ?: buildString {
             diff.comparisonPoints.forEachIndexed { idx, pt ->
-                append("${idx + 1}. ${pt.basisOfDifference}:\n")
+                append("${idx + 1}. Basis: ${pt.basisOfDifference}\n")
                 append("   • ${diff.conceptA}: ${pt.conceptAValue}\n")
-                append("   • ${diff.conceptB}: ${pt.conceptBValue}\n")
+                append("   • ${diff.conceptB}: ${pt.conceptBValue}\n\n")
             }
-        }
+        }.trimEnd()
 
     val examinerObservationText = noteComparison?.examinerObservation
         ?: diff.examinerTrapNote.ifBlank {
@@ -842,18 +852,12 @@ fun ExamApplicationDifferenceCard(
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))
-                Surface(
-                    shape = RoundedCornerShape(5.dp),
-                    color = ErrorRed.copy(alpha = 0.06f),
-                    border = BorderStroke(0.5.dp, ErrorRed.copy(alpha = 0.25f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                DiffNotionCallout(accentColor = ErrorRed) {
                     Text(
                         text = "⚠️ Examiner Observation: $examinerObservationText",
                         fontSize = 10.5.sp,
                         lineHeight = 15.sp,
-                        color = ErrorRed,
-                        modifier = Modifier.padding(7.dp)
+                        color = ErrorRed
                     )
                 }
             }
@@ -867,7 +871,8 @@ fun BasisFirstStackedCard(
     row: ComparisonRow,
     conceptAName: String,
     conceptBName: String,
-    isTapToRecall: Boolean
+    isTapToRecall: Boolean,
+    onReviewTapped: () -> Unit = {}
 ) {
     var isRevealed by remember(row, isTapToRecall) { mutableStateOf(!isTapToRecall) }
     var reviewStatus by remember(row) { mutableStateOf<Boolean?>(null) }
@@ -905,100 +910,91 @@ fun BasisFirstStackedCard(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Concept A
-            Surface(
-                shape = RoundedCornerShape(5.dp),
-                color = Sky500.copy(alpha = 0.06f),
-                border = BorderStroke(0.5.dp, Sky500.copy(alpha = 0.25f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(7.dp)) {
-                    Text(
-                        text = conceptAName,
-                        fontSize = 9.5.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Sky500
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = row.conceptAValue,
-                        fontSize = 11.sp,
-                        lineHeight = 16.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
+            // Concept A (Notion-style Sky callout)
+            DiffNotionCallout(accentColor = Sky500) {
+                Text(
+                    text = conceptAName,
+                    fontSize = 9.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Sky500
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = row.conceptAValue,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
 
             Spacer(modifier = Modifier.height(5.dp))
 
-            // Concept B
-            Surface(
-                shape = RoundedCornerShape(5.dp),
-                color = Amber500.copy(alpha = 0.06f),
-                border = BorderStroke(0.5.dp, Amber500.copy(alpha = 0.25f)),
+            // Concept B (Notion-style Amber callout)
+            DiffNotionCallout(
+                accentColor = Amber500,
                 modifier = Modifier
-                    .fillMaxWidth()
                     .clickable(enabled = !isRevealed) { isRevealed = true }
                     .testTag("concept_b_strip_$index")
             ) {
-                Column(modifier = Modifier.padding(7.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = conceptBName,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Amber500
+                    )
+                    if (!isRevealed) {
                         Text(
-                            text = conceptBName,
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.ExtraBold,
+                            text = "🔒 Tap to reveal",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
                             color = Amber500
                         )
-                        if (!isRevealed) {
-                            Text(
-                                text = "🔒 Tap to reveal",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Amber500
-                            )
-                        }
                     }
+                }
 
-                    if (isRevealed) {
-                        Spacer(modifier = Modifier.height(2.dp))
-                        AnimatedVisibility(visible = true, enter = fadeIn(tween(180))) {
-                            Column {
-                                Text(
-                                    text = row.conceptBValue,
-                                    fontSize = 11.sp,
-                                    lineHeight = 16.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                if (isTapToRecall) {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.End
-                                    ) {
-                                        Text(
-                                            text = "✓ Got it",
-                                            fontSize = 9.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = SuccessGreen,
-                                            modifier = Modifier
-                                                .clickable { reviewStatus = true }
-                                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = "🔁 Review",
-                                            fontSize = 9.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Amber500,
-                                            modifier = Modifier
-                                                .clickable { reviewStatus = false }
-                                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
+                if (isRevealed) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    AnimatedVisibility(visible = true, enter = fadeIn(tween(180))) {
+                        Column {
+                            Text(
+                                text = row.conceptBValue,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (isTapToRecall) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    Text(
+                                        text = "✓ Got it",
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = SuccessGreen,
+                                        modifier = Modifier
+                                            .clickable { reviewStatus = true }
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "🔁 Review",
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Amber500,
+                                        modifier = Modifier
+                                            .clickable {
+                                                reviewStatus = false
+                                                onReviewTapped()
+                                            }
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
                                 }
                             }
                         }
@@ -1009,30 +1005,45 @@ fun BasisFirstStackedCard(
     }
 }
 
+/**
+ * Responsive Full-Width Memory Matrix Card.
+ * NO horizontal scroll clipping: Left col (32% weight) + Right col (68% weight).
+ * Filters out raw markdown table headers ("Col 1", "Col 2", "---", etc.).
+ */
 @Composable
 fun ProgressiveMemoryMatrixCard(
     matrix: StatutoryCheatMatrix,
     filterQuery: String = "",
-    selectedCategory: String = "All Rows"
+    selectedCategory: String = "All Rows",
+    isSwipeDrillActive: Boolean = false,
+    onToggleSwipeDrill: () -> Unit = {}
 ) {
     var expandLevel by remember { mutableIntStateOf(0) }
     val revealedCells = remember { mutableStateMapOf<String, Boolean>() }
 
     val filteredRows = remember(matrix, filterQuery, selectedCategory) {
+        // Filter out markdown headers and table divider noise
+        val cleanRows = matrix.rows.filterNot { row ->
+            row.sectionOrClause.contains("Col 1", ignoreCase = true) ||
+            row.provisionName.contains("Col 2", ignoreCase = true) ||
+            row.sectionOrClause.contains("---") ||
+            row.sectionOrClause.startsWith("Statutory Test", ignoreCase = true)
+        }
+
         val categoryFiltered = when (selectedCategory) {
-            "Statutory Limits" -> matrix.rows.filter {
+            "Statutory Limits" -> cleanRows.filter {
                 !it.penaltyOrException.contains("Quotas —") &&
                 (it.sectionOrClause.startsWith("Sec") || it.sectionOrClause.startsWith("AS ") ||
                  it.sectionOrClause.startsWith("Clause") || it.sectionOrClause.startsWith("GST") ||
                  it.sectionOrClause.startsWith("FM") || it.sectionOrClause.startsWith("SM") ||
                  it.sectionOrClause.contains("Variance") || it.sectionOrClause.contains("Analysis"))
             }
-            "Blueprint Tables" -> matrix.rows.filter {
+            "Blueprint Tables" -> cleanRows.filter {
                 it.sectionOrClause.startsWith("Blueprint") ||
                 it.thresholdOrLimit.contains("As per Blueprint") ||
                 it.penaltyOrException.contains("Exam Trap & Blueprint")
             }
-            else -> matrix.rows
+            else -> cleanRows
         }
 
         if (filterQuery.isBlank()) categoryFiltered
@@ -1054,21 +1065,27 @@ fun ProgressiveMemoryMatrixCard(
             .testTag("statutory_matrix_card_${matrix.paper.name}")
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
+            // Header Row (26.dp): Title + [1 Col | 2 Col | Full] + [🔥 Swipe Drill]
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(26.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = "${matrix.title} (${filteredRows.size})",
-                    fontSize = 11.5.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
                     listOf("1 Col" to 0, "2 Col" to 1, "Full" to 2).forEach { (lbl, lvl) ->
                         val testTagName = when (lvl) {
                             0 -> "pill_1_col_test"
@@ -1079,16 +1096,43 @@ fun ProgressiveMemoryMatrixCard(
                             shape = RoundedCornerShape(4.dp),
                             color = if (expandLevel == lvl) Amber500 else MaterialTheme.colorScheme.surfaceVariant,
                             modifier = Modifier
-                                .height(22.dp)
+                                .height(24.dp)
                                 .clickable { expandLevel = lvl }
                                 .testTag(testTagName)
                         ) {
+                            Box(
+                                modifier = Modifier.padding(horizontal = 5.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = lbl,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (expandLevel == lvl) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(3.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (isSwipeDrillActive) Amber500 else MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier
+                            .height(24.dp)
+                            .clickable { onToggleSwipeDrill() }
+                            .testTag("toggle_swipe_drill_button")
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(horizontal = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text(
-                                text = lbl,
-                                fontSize = 9.5.sp,
+                                text = if (isSwipeDrillActive) "Table View" else "🔥 Swipe Drill",
                                 fontWeight = FontWeight.Bold,
-                                color = if (expandLevel == lvl) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                fontSize = 9.5.sp,
+                                color = if (isSwipeDrillActive) Color.Black else MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
                     }
@@ -1097,78 +1141,95 @@ fun ProgressiveMemoryMatrixCard(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            val horizontalScrollState = rememberScrollState()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(horizontalScrollState)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(vertical = 5.dp)
-                ) {
-                    Box(modifier = Modifier.width(155.dp).padding(horizontal = 6.dp)) {
-                        Text(matrix.columnHeaders.getOrElse(0) { "Section / Clause" }, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                    }
-                    Box(modifier = Modifier.width(175.dp).padding(horizontal = 6.dp)) {
-                        Text(matrix.columnHeaders.getOrElse(1) { "Provision" }, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                    }
-                    if (expandLevel >= 1) {
-                        Box(modifier = Modifier.width(165.dp).padding(horizontal = 6.dp)) {
-                            Text(matrix.columnHeaders.getOrElse(2) { "Threshold / Limit" }, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                        }
-                    }
-                    if (expandLevel >= 2) {
-                        Box(modifier = Modifier.width(190.dp).padding(horizontal = 6.dp)) {
-                            Text(matrix.columnHeaders.getOrElse(3) { "Approval / Rate" }, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                        }
-                        Box(modifier = Modifier.width(220.dp).padding(horizontal = 6.dp)) {
-                            Text(matrix.columnHeaders.getOrElse(4) { "Exception / Trap" }, fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                        }
-                    }
-                }
-
+            // Responsive Full-Width Table (No horizontal scroll clipping)
+            Column(modifier = Modifier.fillMaxWidth()) {
                 filteredRows.forEachIndexed { rowIndex, row ->
-                    val rowBg = if (rowIndex % 2 == 0) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    val rowBg = if (rowIndex % 2 == 0) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
                     val cellKey = "${row.sectionOrClause}_$rowIndex"
                     val isCellPeeked = revealedCells[cellKey] == true
 
                     Row(
                         modifier = Modifier
+                            .fillMaxWidth()
                             .background(rowBg)
-                            .padding(vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 6.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.Top
                     ) {
-                        Box(modifier = Modifier.width(155.dp).padding(horizontal = 6.dp)) {
-                            Text(row.sectionOrClause, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Amber500)
+                        // Left Column (32% weight): Section + Provision Name
+                        Column(
+                            modifier = Modifier
+                                .weight(0.32f)
+                                .padding(end = 6.dp)
+                        ) {
+                            Text(
+                                text = row.sectionOrClause,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp,
+                                color = Amber500
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = row.provisionName,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                lineHeight = 14.sp
+                            )
                         }
-                        Box(modifier = Modifier.width(175.dp).padding(horizontal = 6.dp)) {
-                            Text(row.provisionName, fontSize = 10.sp, fontWeight = FontWeight.Medium)
-                        }
-                        if (expandLevel >= 1 || isCellPeeked) {
-                            Box(modifier = Modifier.width(165.dp).padding(horizontal = 6.dp)) {
-                                Text(row.thresholdOrLimit, fontSize = 10.sp, color = Sky500)
-                            }
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .width(165.dp)
-                                    .padding(horizontal = 6.dp)
-                                    .clickable { revealedCells[cellKey] = true }
-                            ) {
-                                Text("🔒 Peek Limit", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = Sky500)
-                            }
-                        }
-                        if (expandLevel >= 2) {
-                            Box(modifier = Modifier.width(190.dp).padding(horizontal = 6.dp)) {
-                                Text(row.approvalOrRate, fontSize = 10.sp)
-                            }
-                            Box(modifier = Modifier.width(220.dp).padding(horizontal = 6.dp)) {
-                                Text(row.penaltyOrException, fontSize = 10.sp, color = ErrorRed)
+
+                        // Right Column (68% weight): Threshold / Limit / Rule / Exception
+                        Column(
+                            modifier = Modifier.weight(0.68f)
+                        ) {
+                            if (expandLevel == 0 && !isCellPeeked) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                    border = BorderStroke(0.5.dp, Sky500.copy(alpha = 0.4f)),
+                                    modifier = Modifier
+                                        .clickable { revealedCells[cellKey] = true }
+                                        .padding(vertical = 1.dp)
+                                ) {
+                                    Text(
+                                        text = "🔒 Tap to Recall Rule & Limit",
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Sky500,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = row.thresholdOrLimit,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Sky500,
+                                    lineHeight = 15.sp
+                                )
+                                if (row.approvalOrRate.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = row.approvalOrRate,
+                                        fontSize = 10.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        lineHeight = 14.sp
+                                    )
+                                }
+                                if (expandLevel >= 2 || isCellPeeked) {
+                                    if (row.penaltyOrException.isNotBlank()) {
+                                        Spacer(modifier = Modifier.height(3.dp))
+                                        Text(
+                                            text = "⚠️ ${row.penaltyOrException}",
+                                            fontSize = 10.sp,
+                                            color = ErrorRed,
+                                            lineHeight = 14.sp
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
+                    HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
                 }
             }
         }
@@ -1192,7 +1253,8 @@ fun TinderSwipeDrillSection(
     matrixRows: List<StatutoryMatrixRow>,
     progressMap: Map<String, com.example.data.local.TopicProgressEntity>,
     onSwipeMastered: (String) -> Unit,
-    onSwipeNeedPractice: (String) -> Unit
+    onSwipeNeedPractice: (String) -> Unit,
+    onBackToTable: () -> Unit = {}
 ) {
     val coroutineScope = rememberCoroutineScope()
 
@@ -1243,13 +1305,35 @@ fun TinderSwipeDrillSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Rapid Recall Card Drill", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 Text(
-                    text = if (currentIndex < cards.size) "${currentIndex + 1}/${cards.size}" else "Done",
+                    text = "Rapid Recall Card Drill",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 10.5.sp,
-                    color = Amber500
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (currentIndex < cards.size) "${currentIndex + 1}/${cards.size}" else "Done",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 10.5.sp,
+                        color = Amber500
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .height(20.dp)
+                            .clickable { onBackToTable() }
+                    ) {
+                        Text(
+                            text = "Table ✕",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(6.dp))
@@ -1329,6 +1413,7 @@ fun TinderSwipeDrillSection(
                                     text = currentCard.title,
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 2
                                 )
                                 Text(
@@ -1337,7 +1422,12 @@ fun TinderSwipeDrillSection(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text(currentCard.keyRule, fontSize = 11.sp, lineHeight = 16.sp)
+                                Text(
+                                    text = currentCard.keyRule,
+                                    fontSize = 11.sp,
+                                    lineHeight = 16.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = currentCard.pitfallOrException,
@@ -1403,6 +1493,7 @@ fun TinderSwipeDrillSection(
                         Text(
                             text = "Undo",
                             fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
@@ -1438,7 +1529,12 @@ fun TinderSwipeDrillSection(
                         .padding(vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("Drill Complete! Mastered: $masteredCount • Review: $needPracticeCount", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "Drill Complete! Mastered: $masteredCount • Review: $needPracticeCount",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                     Spacer(modifier = Modifier.height(6.dp))
                     Surface(
                         shape = RoundedCornerShape(5.dp),
@@ -1492,11 +1588,17 @@ fun TopicDropdownPicker(
                     text = "$label: ${selectedTopic?.topicName ?: "Select"}",
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(13.dp))
+                Icon(
+                    Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(13.dp)
+                )
             }
         }
 

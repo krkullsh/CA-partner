@@ -24,6 +24,7 @@ import com.example.data.model.MessageSender
 import com.example.data.model.PaperCode
 import com.example.data.model.PriorityTier
 import com.example.data.model.SyllabusTopic
+import com.example.data.model.ThemeMode
 import com.example.data.repository.StudyRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -97,6 +98,19 @@ data class McqTestState(
 class CaLabViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefs = application.getSharedPreferences("ca_lab_settings", android.content.Context.MODE_PRIVATE)
+
+    // Theme Mode StateFlow backed by SharedPreferences
+    private val _themeMode = MutableStateFlow(
+        runCatching {
+            ThemeMode.valueOf(prefs.getString("app_theme_mode", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name)
+        }.getOrDefault(ThemeMode.SYSTEM)
+    )
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: ThemeMode) {
+        _themeMode.value = mode
+        prefs.edit().putString("app_theme_mode", mode.name).apply()
+    }
 
     // Experience Level StateFlow backed by SharedPreferences
     private val _experienceLevel = MutableStateFlow(

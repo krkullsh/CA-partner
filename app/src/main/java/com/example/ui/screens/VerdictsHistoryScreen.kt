@@ -24,35 +24,27 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Assignment
-import androidx.compose.material.icons.automirrored.filled.FactCheck
-import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.School
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -69,33 +61,37 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.curriculum.CaSyllabusData
 import com.example.data.local.ErrorLogEntity
 import com.example.data.local.TopicProgressEntity
-import com.example.data.model.CatalogSortOrder
 import com.example.data.model.LabMode
 import com.example.data.model.LabVerdict
 import com.example.data.model.McqQuestion
 import com.example.data.model.PaperCode
-import com.example.data.model.PriorityTier
 import com.example.data.model.SyllabusTopic
 import com.example.ui.theme.Amber500
 import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.Sky500
 import com.example.ui.theme.SuccessGreen
 import com.example.ui.viewmodel.CaLabViewModel
+import com.example.ui.viewmodel.VerdictsDashboardState
 
 @Composable
 fun VerdictsHistoryScreen(viewModel: CaLabViewModel) {
     val dashboard by viewModel.verdictsDashboard.collectAsState()
-    val mcqState by viewModel.mcqTestState.collectAsState()
     val errorLogs by viewModel.errorLogs.collectAsState()
     val progressMap by viewModel.topicProgressMap.collectAsState()
-    val catalogSortOrder by viewModel.catalogSortOrder.collectAsState()
 
-    var activeSubTab by remember { mutableIntStateOf(0) } // 0 = Syllabus Ledger, 1 = Diagnostic MCQ, 2 = Weakness Radar & Errors, 3 = Verdicts
+    // 0 = Ledger, 1 = MCQ Test, 2 = Weakness Radar & Errors, 3 = Verdicts
+    var activeSubTab by remember { mutableIntStateOf(0) }
+
+    // Shared Paper & View Filters (Controlled via unified [Filter ▾] dropdown)
+    var selectedPaper by remember { mutableStateOf<PaperCode?>(null) }
+    var showPinnedOnly by remember { mutableStateOf(false) }
+    var filterMenuExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.loadVerdictsDashboard()
@@ -104,87 +100,233 @@ fun VerdictsHistoryScreen(viewModel: CaLabViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 12.dp)
             .testTag("verdicts_history_screen")
     ) {
         Spacer(modifier = Modifier.height(4.dp))
 
-        // 4 SUB-TABS ROW AT TOP
-        Card(
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            modifier = Modifier.fillMaxWidth()
+        // SLEEK SINGLE-LINE 28.DP SUB-TAB SEGMENTED BAR + 26.DP FILTER DROPDOWN
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(28.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            TabRow(
-                selectedTabIndex = activeSubTab,
-                containerColor = Color.Transparent,
-                contentColor = MaterialTheme.colorScheme.primary
+            // 4-Tab Segmented Pill Bar
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(28.dp)
             ) {
-                Tab(
-                    selected = activeSubTab == 0,
-                    onClick = { activeSubTab = 0 },
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.AutoMirrored.Filled.FactCheck, contentDescription = null, modifier = Modifier.size(14.dp), tint = Amber500)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Ledger", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val tabs = listOf(
+                        "Ledger" to 0,
+                        "MCQ Test" to 1,
+                        "Weakness (${errorLogs.size})" to 2,
+                        "Verdicts" to 3
+                    )
+
+                    tabs.forEach { (label, index) ->
+                        val isSelected = activeSubTab == index
+                        val testTagString = when (index) {
+                            0 -> "subtab_syllabus_ledger"
+                            1 -> "subtab_mcq_test"
+                            2 -> "subtab_weakness_radar"
+                            else -> "subtab_verdicts_history"
                         }
-                    },
-                    modifier = Modifier.testTag("subtab_syllabus_ledger")
-                )
-                Tab(
-                    selected = activeSubTab == 1,
-                    onClick = { activeSubTab = 1 },
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(14.dp), tint = Sky500)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("MCQ Test", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(24.dp)
+                                .clickable { activeSubTab = index }
+                                .testTag(testTagString)
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = label,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
-                    },
-                    modifier = Modifier.testTag("subtab_mcq_test")
-                )
-                Tab(
-                    selected = activeSubTab == 2,
-                    onClick = { activeSubTab = 2 },
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Assessment, contentDescription = null, modifier = Modifier.size(14.dp), tint = ErrorRed)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Radar (${errorLogs.size})", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Unified [Filter ▾] dropdown button (26.dp height)
+            Box {
+                val hasActiveFilter = selectedPaper != null || showPinnedOnly
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (hasActiveFilter) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                    border = BorderStroke(
+                        0.5.dp,
+                        if (hasActiveFilter) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                    ),
+                    modifier = Modifier
+                        .height(26.dp)
+                        .clickable { filterMenuExpanded = true }
+                        .testTag("ledger_filter_button")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Filter",
+                            modifier = Modifier.size(11.dp),
+                            tint = if (hasActiveFilter) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = if (selectedPaper != null) selectedPaper!!.shortName else if (showPinnedOnly) "Pinned" else "Filter",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (hasActiveFilter) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = null,
+                            modifier = Modifier.size(13.dp),
+                            tint = if (hasActiveFilter) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                // Unified Dropdown Menu for Paper and Chapter Filter
+                DropdownMenu(
+                    expanded = filterMenuExpanded,
+                    onDismissRequest = { filterMenuExpanded = false }
+                ) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "FILTER BY PAPER",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        onClick = {},
+                        enabled = false
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("All 6 Papers", fontSize = 11.sp, fontWeight = if (selectedPaper == null) FontWeight.Bold else FontWeight.Normal) },
+                        leadingIcon = {
+                            if (selectedPaper == null) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                            }
+                        },
+                        onClick = {
+                            selectedPaper = null
+                            filterMenuExpanded = false
                         }
-                    },
-                    modifier = Modifier.testTag("subtab_weakness_radar")
-                )
-                Tab(
-                    selected = activeSubTab == 3,
-                    onClick = { activeSubTab = 3 },
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.School, contentDescription = null, modifier = Modifier.size(14.dp), tint = SuccessGreen)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Verdicts", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                        }
-                    },
-                    modifier = Modifier.testTag("subtab_verdicts_history")
-                )
+                    )
+
+                    PaperCode.entries.forEach { paper ->
+                        val isSelected = selectedPaper == paper
+                        DropdownMenuItem(
+                            text = { Text("${paper.code}: ${paper.shortName}", fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            leadingIcon = {
+                                if (isSelected) {
+                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                                }
+                            },
+                            onClick = {
+                                selectedPaper = paper
+                                viewModel.selectMcqTestPaper(paper)
+                                filterMenuExpanded = false
+                            }
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = "CHAPTER VIEW",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        onClick = {},
+                        enabled = false
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("All Chapters", fontSize = 11.sp, fontWeight = if (!showPinnedOnly) FontWeight.Bold else FontWeight.Normal) },
+                        leadingIcon = {
+                            if (!showPinnedOnly) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                            }
+                        },
+                        onClick = {
+                            showPinnedOnly = false
+                            filterMenuExpanded = false
+                        },
+                        modifier = Modifier.testTag("ledger_filter_all")
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("★ Pinned / Weak Only", fontSize = 11.sp, fontWeight = if (showPinnedOnly) FontWeight.Bold else FontWeight.Normal) },
+                        leadingIcon = {
+                            if (showPinnedOnly) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp), tint = Amber500)
+                            }
+                        },
+                        onClick = {
+                            showPinnedOnly = true
+                            filterMenuExpanded = false
+                        },
+                        modifier = Modifier.testTag("ledger_filter_pinned")
+                    )
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         when (activeSubTab) {
             0 -> SyllabusLedgerSection(
                 viewModel = viewModel,
                 progressMap = progressMap,
-                catalogSortOrder = catalogSortOrder,
-                verdicts = dashboard.verdicts
+                verdicts = dashboard.verdicts,
+                selectedPaper = selectedPaper,
+                showPinnedOnly = showPinnedOnly
             )
-            1 -> McqTestSection(viewModel = viewModel)
+            1 -> McqTestSection(
+                viewModel = viewModel,
+                selectedPaper = selectedPaper
+            )
             2 -> RadarAndErrorsSection(
                 viewModel = viewModel,
                 progressMap = progressMap,
-                errorLogs = errorLogs
+                errorLogs = errorLogs,
+                selectedPaper = selectedPaper
             )
             3 -> PastVerdictsSection(
                 dashboard = dashboard,
@@ -196,203 +338,211 @@ fun VerdictsHistoryScreen(viewModel: CaLabViewModel) {
 }
 
 // =========================================================================
-// SUB-TAB 0: ANTI-DUOLINGO CALM "MY PROGRESS" SYLLABUS LEDGER
+// SUB-TAB 0: MODERN CALM SYLLABUS LEDGER
 // =========================================================================
 @Composable
 fun SyllabusLedgerSection(
     viewModel: CaLabViewModel,
     progressMap: Map<String, TopicProgressEntity>,
-    catalogSortOrder: CatalogSortOrder,
-    verdicts: List<LabVerdict>
+    verdicts: List<LabVerdict>,
+    selectedPaper: PaperCode?,
+    showPinnedOnly: Boolean
 ) {
-    var selectedPaper by remember { mutableStateOf<PaperCode?>(null) } // null = All
-    // Filter mode: "ALL", "PINNED_SWIPE", "TIER_1", "NEEDS_WORK"
-    var filterMode by remember { mutableStateOf("ALL") }
-
     val rawTopics = remember(selectedPaper) {
-        if (selectedPaper != null) CaSyllabusData.getTopicsForPaper(selectedPaper!!)
+        if (selectedPaper != null) CaSyllabusData.getTopicsForPaper(selectedPaper)
         else CaSyllabusData.topics
     }
 
-    // Sort according to catalogSortOrder
-    val sortedTopics = remember(rawTopics, catalogSortOrder) {
-        when (catalogSortOrder) {
-            CatalogSortOrder.OFFICIAL_ICAI -> rawTopics.sortedWith(
-                compareBy<SyllabusTopic> { it.paper.ordinal }
-                    .thenBy { it.icaiChapterNumber }
-                    .thenBy { it.topicName }
-            )
-            CatalogSortOrder.PRIORITY_TIER -> rawTopics.sortedWith(
-                compareBy<SyllabusTopic> { it.priorityTier.ordinal }
-                    .thenBy { it.paper.ordinal }
-                    .thenBy { it.icaiChapterNumber }
-            )
-        }
+    // Always sort cleanly by Official ICAI Chapter order: Paper -> Chapter Number -> Topic Name
+    val sortedTopics = remember(rawTopics) {
+        rawTopics.sortedWith(
+            compareBy<SyllabusTopic> { it.paper.ordinal }
+                .thenBy { it.icaiChapterNumber }
+                .thenBy { it.topicName }
+        )
     }
 
-    // Pinned from Swipe Drill topics count
-    val pinnedCount = remember(progressMap) {
-        CaSyllabusData.topics.count { progressMap[it.id]?.swipeDrillStatus == 1 }
-    }
-
-    // Filter topics
-    val filteredTopics = remember(sortedTopics, filterMode, progressMap) {
-        when (filterMode) {
-            "PINNED_SWIPE" -> sortedTopics.filter { progressMap[it.id]?.swipeDrillStatus == 1 }
-            "TIER_1" -> sortedTopics.filter { it.priorityTier == PriorityTier.TIER_1 }
-            "NEEDS_WORK" -> sortedTopics.filter { topic ->
+    // Filter topics: All vs Pinned/Weak only
+    val filteredTopics = remember(sortedTopics, showPinnedOnly, progressMap) {
+        if (showPinnedOnly) {
+            sortedTopics.filter { topic ->
                 val p = progressMap[topic.id]
-                (p?.swipeDrillStatus == 1) || (p?.teacherReadCompleted ?: 0) == 0 || ((p?.mcqAttempted ?: 0) > 0 && (p?.mcqCorrect ?: 0) * 2 <= (p?.mcqAttempted ?: 1))
+                (p?.swipeDrillStatus == 1) || (p?.teacherReadCompleted ?: 0) == 0 ||
+                    ((p?.mcqAttempted ?: 0) > 0 && (p?.mcqCorrect ?: 0) * 2 <= (p?.mcqAttempted ?: 1))
             }
-            else -> sortedTopics
+        } else {
+            sortedTopics
         }
     }
 
-    // 5-Min Low-Energy Revision topics (pick 3 high priority unread or pinned topics)
-    val lowEnergyTopics = remember(progressMap) {
-        val pinned = CaSyllabusData.topics.filter { progressMap[it.id]?.swipeDrillStatus == 1 }
-        val unreadTier1 = CaSyllabusData.topics.filter {
-            it.priorityTier == PriorityTier.TIER_1 && (progressMap[it.id]?.teacherReadCompleted ?: 0) == 0
-        }
-        (pinned + unreadTier1).distinctBy { it.id }.take(3)
+    // 5-Min Quick Revision pinned topics (horizontal compact strip)
+    val revisionTopics = remember(progressMap, selectedPaper) {
+        val pool = if (selectedPaper != null) CaSyllabusData.getTopicsForPaper(selectedPaper) else CaSyllabusData.topics
+        val pinned = pool.filter { progressMap[it.id]?.swipeDrillStatus == 1 }
+        val unread = pool.filter { (progressMap[it.id]?.teacherReadCompleted ?: 0) == 0 }
+        (pinned + unread).distinctBy { it.id }.take(6)
     }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(bottom = 16.dp)
     ) {
-        // Calm Ledger Header Card (Anti-Duolingo: No streaks, no guilt bars)
-        item {
-            Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.FactCheck, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "Statutory Syllabus Ledger",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Text(
-                            text = "Calm, dignified audit tracking. Study at your own pace without pressure or streaks.",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                        )
-                    }
-                }
-            }
-        }
-
-        // ⚡ 5-Min Low-Energy Revision Card
-        if (lowEnergyTopics.isNotEmpty()) {
+        // COMPACT 5-MIN QUICK REVISION LAZYROW (height = 56.dp, width = 210.dp)
+        if (revisionTopics.isNotEmpty()) {
             item {
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Amber500.copy(alpha = 0.12f)),
-                    border = BorderStroke(1.dp, Amber500.copy(alpha = 0.4f)),
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("low_energy_revision_card")
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Lightbulb, contentDescription = null, tint = Amber500, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("⚡ 5-Min Low-Energy Revision", fontWeight = FontWeight.ExtraBold, fontSize = 12.sp, color = Amber500)
-                            }
-                            Text("Quick 1-Tap Catchup", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 2.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Lightbulb,
+                                contentDescription = null,
+                                tint = Amber500,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "5-Min Quick Revision (${revisionTopics.size})",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Amber500
+                            )
                         }
+                        Text(
+                            text = "Swipe Drill & Weak Rules",
+                            fontSize = 9.5.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
 
-                        lowEnergyTopics.forEach { topic ->
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(revisionTopics, key = { it.id }) { topic ->
                             val isPinned = progressMap[topic.id]?.swipeDrillStatus == 1
-                            Row(
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                border = BorderStroke(
+                                    0.5.dp,
+                                    if (isPinned) Amber500.copy(alpha = 0.6f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                ),
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .width(210.dp)
+                                    .height(56.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                    Surface(
-                                        shape = RoundedCornerShape(4.dp),
-                                        color = if (isPinned) Amber500.copy(alpha = 0.2f) else MaterialTheme.colorScheme.primaryContainer
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    // Row 1: Chapter and Name
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(
-                                            text = if (isPinned) "Pinned 🔁" else topic.paper.shortName,
-                                            fontSize = 9.sp,
+                                            text = "Ch ${topic.icaiChapterNumber} • ${topic.topicName}",
+                                            fontSize = 10.5.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (isPinned) Amber500 else MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f)
                                         )
-                                    }
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = topic.topicName,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.clickable {
-                                            viewModel.setActivePaper(topic.paper)
-                                            viewModel.setActiveTopic(topic)
-                                            viewModel.setMode(LabMode.ASK_LAB)
+                                        if (isPinned) {
+                                            Text(
+                                                text = "🔁",
+                                                fontSize = 9.sp,
+                                                modifier = Modifier.padding(start = 2.dp)
+                                            )
                                         }
-                                    ) {
-                                        Text(
-                                            text = "Revise 💡",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onPrimary,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                                        )
                                     }
 
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = Amber500,
-                                        modifier = Modifier.clickable {
-                                            viewModel.setActivePaper(topic.paper)
-                                            viewModel.setActiveTopic(topic)
-                                            viewModel.setMode(LabMode.SPOT_DIFFERENCE)
-                                        }
+                                    // Row 2: Paper Tag + Micro Action Pills (22.dp height)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(
-                                            text = "Drill 🔥",
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.Black,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                                        )
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                                        ) {
+                                            Text(
+                                                text = topic.paper.shortName,
+                                                fontSize = 8.5.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+
+                                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            // 1-Tap Revise Pill (22.dp)
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                modifier = Modifier
+                                                    .height(22.dp)
+                                                    .clickable {
+                                                        viewModel.setActivePaper(topic.paper)
+                                                        viewModel.setActiveTopic(topic)
+                                                        viewModel.setMode(LabMode.ASK_LAB)
+                                                    }
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = "Revise",
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                                    )
+                                                }
+                                            }
+
+                                            // 1-Tap Drill Pill (22.dp)
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = Amber500.copy(alpha = 0.2f),
+                                                modifier = Modifier
+                                                    .height(22.dp)
+                                                    .clickable {
+                                                        viewModel.setActivePaper(topic.paper)
+                                                        viewModel.setActiveTopic(topic)
+                                                        viewModel.setMode(LabMode.SPOT_DIFFERENCE)
+                                                    }
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier.padding(horizontal = 6.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = "Drill 🔥",
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Amber500
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -402,167 +552,12 @@ fun SyllabusLedgerSection(
             }
         }
 
-        // Sort Order Switcher Bar
-        item {
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val isOfficial = catalogSortOrder == CatalogSortOrder.OFFICIAL_ICAI
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (isOfficial) MaterialTheme.colorScheme.primary else Color.Transparent,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { viewModel.setCatalogSortOrder(CatalogSortOrder.OFFICIAL_ICAI) }
-                            .testTag("sort_official_icai")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(vertical = 6.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.FormatListNumbered,
-                                contentDescription = null,
-                                modifier = Modifier.size(13.dp),
-                                tint = if (isOfficial) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Official ICAI Order",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isOfficial) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (!isOfficial) MaterialTheme.colorScheme.primary else Color.Transparent,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { viewModel.setCatalogSortOrder(CatalogSortOrder.PRIORITY_TIER) }
-                            .testTag("sort_priority_tier")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(vertical = 6.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Sort,
-                                contentDescription = null,
-                                modifier = Modifier.size(13.dp),
-                                tint = if (!isOfficial) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Exam Priority Tier",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (!isOfficial) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Filter Chips Row (All, Pinned from Swipe Drill, Tier 1, Needs Work)
-        item {
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                item {
-                    FilterChip(
-                        selected = filterMode == "ALL",
-                        onClick = { filterMode = "ALL" },
-                        label = { Text("All (${sortedTopics.size})", fontSize = 11.sp) },
-                        modifier = Modifier.testTag("ledger_filter_all")
-                    )
-                }
-
-                item {
-                    FilterChip(
-                        selected = filterMode == "PINNED_SWIPE",
-                        onClick = { filterMode = "PINNED_SWIPE" },
-                        label = { Text("🔁 Pinned from Drill ($pinnedCount)", fontSize = 11.sp) },
-                        modifier = Modifier.testTag("ledger_filter_pinned"),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Amber500.copy(alpha = 0.2f),
-                            selectedLabelColor = Amber500
-                        )
-                    )
-                }
-
-                item {
-                    FilterChip(
-                        selected = filterMode == "TIER_1",
-                        onClick = { filterMode = "TIER_1" },
-                        label = { Text("🔥 Tier 1 Only", fontSize = 11.sp) },
-                        modifier = Modifier.testTag("ledger_filter_tier1")
-                    )
-                }
-
-                item {
-                    FilterChip(
-                        selected = filterMode == "NEEDS_WORK",
-                        onClick = { filterMode = "NEEDS_WORK" },
-                        label = { Text("⚠️ Needs Work", fontSize = 11.sp) },
-                        modifier = Modifier.testTag("ledger_filter_needs_work")
-                    )
-                }
-            }
-        }
-
-        // Paper Selection Row
-        item {
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                item {
-                    FilterChip(
-                        selected = selectedPaper == null,
-                        onClick = { selectedPaper = null },
-                        label = { Text("All Papers", fontSize = 11.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    )
-                }
-                items(PaperCode.entries, key = { it.name }) { paper ->
-                    val isSelected = selectedPaper == paper
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { selectedPaper = paper },
-                        label = { Text(paper.shortName, fontSize = 11.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    )
-                }
-            }
-        }
-
-        // Ledger Topic Cards List with 4-Segment Completion Indicators
+        // COMPACT CHAPTER LEDGER CARDS LIST (Official ICAI Order + Marks Weightage)
         items(filteredTopics, key = { it.id }) { topic ->
             val progress = progressMap[topic.id]
             val hasVerdict = verdicts.any { it.topicName == topic.topicName }
-            SyllabusLedgerItemCard(
+
+            ChapterLedgerCard(
                 topic = topic,
                 progress = progress,
                 hasVerdict = hasVerdict,
@@ -595,15 +590,15 @@ fun SyllabusLedgerSection(
         if (filteredTopics.isEmpty()) {
             item {
                 Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "No chapters found matching filter '$filterMode'.",
-                        fontSize = 12.sp,
+                        text = if (showPinnedOnly) "No pinned or weak chapters found. Great job!" else "No chapters found.",
+                        fontSize = 11.5.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(16.dp),
+                        modifier = Modifier.padding(14.dp),
                         textAlign = TextAlign.Center
                     )
                 }
@@ -612,9 +607,9 @@ fun SyllabusLedgerSection(
     }
 }
 
-// 4-Segment Topic Completion Card
+// Compact 1-Card Row for Syllabus Chapter
 @Composable
-fun SyllabusLedgerItemCard(
+fun ChapterLedgerCard(
     topic: SyllabusTopic,
     progress: TopicProgressEntity?,
     hasVerdict: Boolean,
@@ -623,203 +618,201 @@ fun SyllabusLedgerItemCard(
     onJumpToAsk: () -> Unit,
     onJumpToTeach: () -> Unit
 ) {
-    val tierColor = Color(topic.priorityTier.badgeColorHex)
     val isRead = progress?.teacherReadCompleted == 1
     val isRecalled = (progress?.mcqAttempted ?: 0) > 0
     val drillStatus = progress?.swipeDrillStatus ?: 0 // 0=Unseen, 1=Need Practice, 2=Mastered
-    val isWrittenOrOral = (progress?.writtenSolved ?: 0) > 0 || (progress?.oralRecallsCompleted ?: 0) > 0 || hasVerdict
 
     Card(
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, if (drillStatus == 1) Amber500.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = BorderStroke(
+            0.5.dp,
+            if (drillStatus == 1) Amber500.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
         modifier = Modifier
             .fillMaxWidth()
             .testTag("ledger_card_${topic.id}")
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            // Header Row: ICAI Chapter + Title + Tier & Amendment Badges
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+        ) {
+            // ROW 1: Chapter Number & Name (Bold) + Marks Weightage on Right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            text = "Ch ${topic.icaiChapterNumber}",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            text = topic.topicName,
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1
-                        )
-                        Text(
-                            text = "${topic.paper.shortName} • ${topic.chapter}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = "Ch ${topic.icaiChapterNumber} • ${topic.topicName}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (topic.hasRecentAmendment) {
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = Amber500.copy(alpha = 0.2f)
-                        ) {
-                            Text(
-                                text = "🆕 BOS Amendment",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Amber500,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
+                Spacer(modifier = Modifier.width(6.dp))
 
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = tierColor.copy(alpha = 0.15f)
-                    ) {
-                        Text(
-                            text = topic.priorityTier.label.split("•")[0].trim(),
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = tierColor,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                        )
-                    }
+                // Official Marks Weightage Badge
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f)
+                ) {
+                    Text(
+                        text = "${topic.averageMarks.toInt()}M",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // 4-SEGMENT COMPLETION INDICATOR
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.fillMaxWidth()
+            // ROW 2: 4 Completion Dots on Left + Two Compact 24.dp Action Pills on Right
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                // 4 Completion Indicators (Read • Recalled • Drill • Verdict)
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(6.dp),
-                    horizontalArrangement = Arrangement.SpaceAround,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 1. Read Segment
+                    // 1. Read Indicator
                     Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = if (isRead) SuccessGreen else Color.Transparent,
-                        border = BorderStroke(1.dp, if (isRead) SuccessGreen else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (isRead) SuccessGreen.copy(alpha = 0.15f) else Color.Transparent,
+                        border = BorderStroke(
+                            0.5.dp,
+                            if (isRead) SuccessGreen else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        ),
                         modifier = Modifier
                             .clickable { onToggleRead() }
                             .testTag("segment_read_${topic.id}")
                     ) {
                         Text(
                             text = if (isRead) "✓ Read" else "○ Read",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isRead) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isRead) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                         )
                     }
 
-                    // 2. Recalled Segment (MCQs)
-                    val mcqText = if (isRecalled) "✓ Recalled (${progress?.mcqCorrect}/${progress?.mcqAttempted})" else "○ Recalled"
+                    // 2. Recalled Indicator (MCQ)
                     Surface(
-                        shape = RoundedCornerShape(6.dp),
+                        shape = RoundedCornerShape(4.dp),
                         color = if (isRecalled) SuccessGreen.copy(alpha = 0.15f) else Color.Transparent,
-                        border = BorderStroke(1.dp, if (isRecalled) SuccessGreen else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                        border = BorderStroke(
+                            0.5.dp,
+                            if (isRecalled) SuccessGreen else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
                     ) {
                         Text(
-                            text = mcqText,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
+                            text = if (isRecalled) "✓ MCQ" else "○ MCQ",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
                             color = if (isRecalled) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                         )
                     }
 
-                    // 3. Drill Segment (Swipe Drill)
+                    // 3. Drill Indicator (Swipe Drill)
                     val (drillLabel, drillColor, drillBg) = when (drillStatus) {
-                        2 -> Triple("✓ Mastered", SuccessGreen, SuccessGreen.copy(alpha = 0.15f))
-                        1 -> Triple("🔁 Need Practice", Amber500, Amber500.copy(alpha = 0.2f))
+                        2 -> Triple("✓ Drill", SuccessGreen, SuccessGreen.copy(alpha = 0.15f))
+                        1 -> Triple("🔁 Drill", Amber500, Amber500.copy(alpha = 0.2f))
                         else -> Triple("○ Drill", MaterialTheme.colorScheme.onSurfaceVariant, Color.Transparent)
                     }
                     Surface(
-                        shape = RoundedCornerShape(6.dp),
+                        shape = RoundedCornerShape(4.dp),
                         color = drillBg,
-                        border = BorderStroke(1.dp, drillColor),
+                        border = BorderStroke(
+                            0.5.dp,
+                            if (drillStatus != 0) drillColor else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        ),
                         modifier = Modifier
                             .clickable { onToggleSwipe() }
                             .testTag("segment_drill_${topic.id}")
                     ) {
                         Text(
                             text = drillLabel,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
                             color = drillColor,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                         )
                     }
 
-                    // 4. Written / Oral Segment
+                    // 4. Verdict Indicator
                     Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = if (isWrittenOrOral) SuccessGreen.copy(alpha = 0.15f) else Color.Transparent,
-                        border = BorderStroke(1.dp, if (isWrittenOrOral) SuccessGreen else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (hasVerdict) SuccessGreen.copy(alpha = 0.15f) else Color.Transparent,
+                        border = BorderStroke(
+                            0.5.dp,
+                            if (hasVerdict) SuccessGreen else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
                     ) {
                         Text(
-                            text = if (isWrittenOrOral) "✓ Verdict" else "○ Verdict",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isWrittenOrOral) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            text = if (hasVerdict) "✓ Exam" else "○ Exam",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (hasVerdict) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                         )
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(10.dp))
+                // Two Compact 24.dp Action Pills: [Study] and [Teach]
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                        modifier = Modifier
+                            .height(24.dp)
+                            .clickable { onJumpToAsk() }
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Study 💡",
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
 
-            // Navigation Jump Buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedButton(
-                    onClick = onJumpToAsk,
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    modifier = Modifier.height(30.dp)
-                ) {
-                    Text("Study Material 💡", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                }
-
-                Spacer(modifier = Modifier.width(6.dp))
-
-                Button(
-                    onClick = onJumpToTeach,
-                    shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    modifier = Modifier.height(30.dp)
-                ) {
-                    Text("Teach Lab 🎤", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .height(24.dp)
+                            .clickable { onJumpToTeach() }
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "Teach 🎤",
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -827,62 +820,64 @@ fun SyllabusLedgerItemCard(
 }
 
 // =========================================================================
-// SUB-TAB 1: DIAGNOSTIC MCQ TEST SECTION
+// SUB-TAB 1: COMPACT DIAGNOSTIC MCQ TEST SECTION (Dark/Light Safe)
 // =========================================================================
 @Composable
-fun McqTestSection(viewModel: CaLabViewModel) {
+fun McqTestSection(
+    viewModel: CaLabViewModel,
+    selectedPaper: PaperCode?
+) {
     val mcqState by viewModel.mcqTestState.collectAsState()
+
+    // Sync selectedPaper with McqTest if changed externally
+    LaunchedEffect(selectedPaper) {
+        if (selectedPaper != null && mcqState.selectedPaper != selectedPaper) {
+            viewModel.selectMcqTestPaper(selectedPaper)
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 16.dp)
     ) {
-        // Paper selection row for MCQs
-        item {
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                items(PaperCode.entries, key = { it.name }) { paper ->
-                    val isSelected = mcqState.selectedPaper == paper
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { viewModel.selectMcqTestPaper(paper) },
-                        label = { Text(paper.shortName, fontSize = 11.sp) },
-                        modifier = Modifier.testTag("mcq_paper_${paper.name}"),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Amber500.copy(alpha = 0.2f),
-                            selectedLabelColor = Amber500
-                        )
-                    )
-                }
-            }
-        }
-
-        // Diagnostic Test Card
+        // Compact Diagnostic Test Banner Header (without redundant multi-row chips)
         item {
             Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(Icons.Default.Speed, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(24.dp))
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "${mcqState.selectedPaper.title} • Diagnostic Test",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "ICAI Case Scenarios & Traps. Wrong answers automatically save to your Active Error Log.",
+                            text = "Wrong answers automatically save to your Active Error Log.",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            text = mcqState.selectedPaper.shortName,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
                 }
@@ -896,23 +891,24 @@ fun McqTestSection(viewModel: CaLabViewModel) {
                 val totalMarks = if (mcqState.totalQuestions > 0) mcqState.totalQuestions * 2 else mcqState.questions.size * 2
                 val percent = if (totalMarks > 0) (marksScored * 100 / totalMarks) else 0
                 val bannerColor = if (percent >= 70) SuccessGreen else if (percent >= 40) Amber500 else ErrorRed
+
                 Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = bannerColor.copy(alpha = 0.15f)),
-                    border = BorderStroke(1.2.dp, bannerColor),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = bannerColor.copy(alpha = 0.12f)),
+                    border = BorderStroke(1.dp, bannerColor.copy(alpha = 0.6f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
+                    Column(modifier = Modifier.padding(12.dp)) {
                         Text(
                             text = "Diagnostic Result: $marksScored / $totalMarks Marks ($percent%)",
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 14.sp,
+                            fontSize = 13.sp,
                             color = bannerColor
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(3.dp))
                         Text(
                             text = if (percent >= 70) "Strong statutory grasp! Missed subtleties are saved to your Active Error Log." else "Review the detailed ICAI working notes below. Missed rules saved for revision.",
-                            fontSize = 11.sp,
+                            fontSize = 10.5.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -920,7 +916,7 @@ fun McqTestSection(viewModel: CaLabViewModel) {
             }
         }
 
-        // Question items list
+        // Question items list (No Tier 1/2 badges, Clean Dark Mode Surfaces)
         itemsIndexed(mcqState.questions, key = { index, q -> "${q.id}_$index" }) { index, q ->
             McqQuestionCard(
                 qNumber = index + 1,
@@ -939,13 +935,14 @@ fun McqTestSection(viewModel: CaLabViewModel) {
                     enabled = mcqState.userAnswers.isNotEmpty(),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 8.dp)
+                        .padding(vertical = 4.dp)
                         .testTag("submit_mcq_test_button"),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(10.dp)
                 ) {
                     Text(
                         text = "Submit Diagnostic Test (${mcqState.userAnswers.size} / ${mcqState.questions.size} Answered) →",
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
                     )
                 }
             }
@@ -962,25 +959,28 @@ fun McqQuestionCard(
     onSelectOption: (Int) -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
         modifier = Modifier
             .fillMaxWidth()
             .testTag("mcq_question_card_$qNumber")
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            // Header Row: Question # & Priority Tier Badge
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Header Row: Question # & 2 Marks Badge (No Tier Badges)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Box(
                         modifier = Modifier
-                            .size(24.dp)
+                            .size(22.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center
@@ -988,53 +988,55 @@ fun McqQuestionCard(
                         Text(
                             text = "$qNumber",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 11.sp,
+                            fontSize = 10.5.sp,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = question.topicName.take(30) + if (question.topicName.length > 30) "..." else "",
-                        fontSize = 12.sp,
+                        text = question.topicName,
+                        fontSize = 11.5.sp,
                         fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = Color(question.priorityTier.badgeColorHex).copy(alpha = 0.15f)
+                    shape = RoundedCornerShape(4.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
                 ) {
                     Text(
-                        text = "2 Marks • ${question.priorityTier.label.split("•")[0].trim()}",
-                        fontSize = 10.sp,
+                        text = "2 Marks",
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color(question.priorityTier.badgeColorHex),
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Integrated Case Scenario memo box if present
             question.caseScenarioText?.let { caseText ->
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 10.dp)
+                        .padding(bottom = 8.dp)
                 ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
+                    Column(modifier = Modifier.padding(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.AutoMirrored.Filled.Assignment, contentDescription = null, tint = Sky500, modifier = Modifier.size(14.dp))
+                            Icon(Icons.AutoMirrored.Filled.Assignment, contentDescription = null, tint = Sky500, modifier = Modifier.size(13.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("📖 Integrated Case Scenario Memo", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Sky500)
+                            Text("📖 Integrated Case Scenario Memo", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Sky500)
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(caseText, fontSize = 11.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(caseText, fontSize = 10.5.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -1044,10 +1046,11 @@ fun McqQuestionCard(
                 text = question.questionStem,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
-                lineHeight = 20.sp
+                lineHeight = 19.sp,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // 4 Options A, B, C, D
             question.options.forEachIndexed { optIndex, optionText ->
@@ -1058,42 +1061,42 @@ fun McqQuestionCard(
                     isSubmitted && isCorrect -> SuccessGreen.copy(alpha = 0.15f)
                     isSubmitted && isChosen && !isCorrect -> ErrorRed.copy(alpha = 0.15f)
                     isChosen -> MaterialTheme.colorScheme.primaryContainer
-                    else -> MaterialTheme.colorScheme.surface
+                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
                 }
 
                 val optionBorder = when {
-                    isSubmitted && isCorrect -> BorderStroke(1.5.dp, SuccessGreen)
-                    isSubmitted && isChosen && !isCorrect -> BorderStroke(1.5.dp, ErrorRed)
-                    isChosen -> BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
-                    else -> BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                    isSubmitted && isCorrect -> BorderStroke(1.2.dp, SuccessGreen)
+                    isSubmitted && isChosen && !isCorrect -> BorderStroke(1.2.dp, ErrorRed)
+                    isChosen -> BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary)
+                    else -> BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(8.dp),
                     color = optionBg,
                     border = optionBorder,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp)
+                        .padding(vertical = 3.dp)
                         .clickable(enabled = !isSubmitted) { onSelectOption(optIndex) }
                         .testTag("mcq_${qNumber}_option_$optIndex")
                 ) {
                     Row(
-                        modifier = Modifier.padding(10.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = optionText,
-                            fontSize = 12.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Normal,
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.weight(1f)
                         )
                         if (isSubmitted) {
                             if (isCorrect) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = "Correct", tint = SuccessGreen, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.CheckCircle, contentDescription = "Correct", tint = SuccessGreen, modifier = Modifier.size(15.dp))
                             } else if (isChosen) {
-                                Icon(Icons.Default.Warning, contentDescription = "Wrong", tint = ErrorRed, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Warning, contentDescription = "Wrong", tint = ErrorRed, modifier = Modifier.size(15.dp))
                             }
                         }
                     }
@@ -1102,23 +1105,23 @@ fun McqQuestionCard(
 
             // Explanation Card after submission
             if (isSubmitted) {
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(8.dp),
                     color = Sky500.copy(alpha = 0.08f),
-                    border = BorderStroke(1.dp, Sky500.copy(alpha = 0.3f)),
+                    border = BorderStroke(0.5.dp, Sky500.copy(alpha = 0.3f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
+                    Column(modifier = Modifier.padding(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Lightbulb, contentDescription = null, tint = Sky500, modifier = Modifier.size(14.dp))
+                            Icon(Icons.Default.Lightbulb, contentDescription = null, tint = Sky500, modifier = Modifier.size(13.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("💡 Working Note & ICAI Provision Reference", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Sky500)
+                            Text("💡 Working Note & ICAI Reference", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, color = Sky500)
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(question.explanation, fontSize = 11.sp, lineHeight = 17.sp, color = MaterialTheme.colorScheme.onSurface)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("🏛️ Ref: ${question.icaiProvisionRef}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Sky500)
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(question.explanation, fontSize = 10.5.sp, lineHeight = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text("🏛️ Ref: ${question.icaiProvisionRef}", fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = Sky500)
                     }
                 }
             }
@@ -1127,19 +1130,19 @@ fun McqQuestionCard(
 }
 
 // =========================================================================
-// SUB-TAB 2: WEAKNESS RADAR & ACTIVE ERROR LOG
+// SUB-TAB 2: WEAKNESS RADAR & ACTIVE ERROR LOG (100% Theme Adaptive)
 // =========================================================================
 @Composable
 fun RadarAndErrorsSection(
     viewModel: CaLabViewModel,
     progressMap: Map<String, TopicProgressEntity>,
-    errorLogs: List<ErrorLogEntity>
+    errorLogs: List<ErrorLogEntity>,
+    selectedPaper: PaperCode?
 ) {
-    var selectedRadarPaper by remember { mutableStateOf<PaperCode?>(null) }
     var viewMode by remember { mutableIntStateOf(0) } // 0 = Weakness Radar, 1 = Active Error Log
 
-    val allTopics = remember(selectedRadarPaper) {
-        if (selectedRadarPaper != null) CaSyllabusData.getTopicsForPaper(selectedRadarPaper!!)
+    val allTopics = remember(selectedPaper) {
+        if (selectedPaper != null) CaSyllabusData.getTopicsForPaper(selectedPaper)
         else CaSyllabusData.topics
     }
 
@@ -1156,98 +1159,84 @@ fun RadarAndErrorsSection(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(bottom = 16.dp)
     ) {
-        // Toggle between Radar and Error Log
+        // Sleek 24.dp Switcher between Weakness Radar and Active Error Log
         item {
-            Card(
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                modifier = Modifier.fillMaxWidth()
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(28.dp)
             ) {
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(4.dp),
+                        .fillMaxSize()
+                        .padding(2.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(6.dp),
                         color = if (viewMode == 0) MaterialTheme.colorScheme.primary else Color.Transparent,
                         modifier = Modifier
                             .weight(1f)
+                            .height(24.dp)
                             .clickable { viewMode = 0 }
                     ) {
-                        Text(
-                            text = "🎯 Weakness Radar",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (viewMode == 0) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(vertical = 6.dp)
-                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "🎯 Weakness Radar",
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (viewMode == 0) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
 
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(6.dp),
                         color = if (viewMode == 1) ErrorRed else Color.Transparent,
                         modifier = Modifier
                             .weight(1f)
+                            .height(24.dp)
                             .clickable { viewMode = 1 }
                     ) {
-                        Text(
-                            text = "⚡ Active Errors (${errorLogs.size})",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (viewMode == 1) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(vertical = 6.dp)
-                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "⚡ Active Errors (${errorLogs.size})",
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (viewMode == 1) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
         }
 
         if (viewMode == 0) {
-            // WEAKNESS RADAR
-
-            item {
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    item {
-                        FilterChip(
-                            selected = selectedRadarPaper == null,
-                            onClick = { selectedRadarPaper = null },
-                            label = { Text("All 6 Papers", fontSize = 11.sp) }
-                        )
-                    }
-                    items(PaperCode.entries, key = { it.name }) { paper ->
-                        val isSelected = selectedRadarPaper == paper
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { selectedRadarPaper = paper },
-                            label = { Text(paper.shortName, fontSize = 11.sp) }
-                        )
-                    }
-                }
-            }
-
+            // WEAKNESS RADAR (Adaptive Dark / Light Colors)
             itemsIndexed(rankedTopics, key = { _, item -> item.first.id }) { index, (topic, accuracy, _) ->
-                val isCritical = (topic.priorityTier == PriorityTier.TIER_1 || topic.priorityTier == PriorityTier.TIER_2) && accuracy < 65.0
-                val tierColor = Color(topic.priorityTier.badgeColorHex)
+                val isCritical = accuracy < 60.0
 
                 Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = if (isCritical) Color(0xFFFEF2F2) else MaterialTheme.colorScheme.surface),
-                    border = BorderStroke(1.dp, if (isCritical) ErrorRed else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isCritical) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surface
+                    ),
+                    border = BorderStroke(
+                        0.5.dp,
+                        if (isCritical) ErrorRed.copy(alpha = 0.7f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("radar_row_${topic.id}")
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
+                    Column(modifier = Modifier.padding(10.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1255,46 +1244,62 @@ fun RadarAndErrorsSection(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                                 Surface(
-                                    shape = RoundedCornerShape(6.dp),
+                                    shape = RoundedCornerShape(4.dp),
                                     color = if (index < 3) ErrorRed.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
                                 ) {
                                     Text(
-                                        text = "Rank #${index + 1}",
+                                        text = "#${index + 1}",
                                         fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 11.sp,
+                                        fontSize = 10.sp,
                                         color = if (index < 3) ErrorRed else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Column {
-                                    Text(topic.topicName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1)
-                                    Text("${topic.paper.shortName} • ${topic.chapter}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        text = "Ch ${topic.icaiChapterNumber} • ${topic.topicName}",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "${topic.paper.shortName} • ${topic.averageMarks.toInt()}M Weight",
+                                        fontSize = 9.5.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
 
                             Surface(
-                                shape = RoundedCornerShape(6.dp),
+                                shape = RoundedCornerShape(4.dp),
                                 color = if (accuracy < 65.0) ErrorRed.copy(alpha = 0.15f) else SuccessGreen.copy(alpha = 0.15f)
                             ) {
                                 Text(
                                     text = "${accuracy.toInt()}% Acc",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
+                                    fontSize = 10.sp,
                                     color = if (accuracy < 65.0) ErrorRed else SuccessGreen,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         }
 
                         if (isCritical) {
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("CRITICAL EXAM RISK — REVISE FIRST", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = ErrorRed)
+                                Text(
+                                    text = "HIGH EXAM RISK • REVISE FIRST",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = ErrorRed
+                                )
                                 Button(
                                     onClick = {
                                         viewModel.setActivePaper(topic.paper)
@@ -1302,10 +1307,11 @@ fun RadarAndErrorsSection(
                                         viewModel.setMode(LabMode.ASK_LAB)
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
-                                    modifier = Modifier.height(28.dp),
-                                    shape = RoundedCornerShape(6.dp)
+                                    modifier = Modifier.height(24.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    shape = RoundedCornerShape(4.dp)
                                 ) {
-                                    Text("Revise in Ask Lab →", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text("Revise in Study Lab →", fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -1317,9 +1323,9 @@ fun RadarAndErrorsSection(
             if (errorLogs.isEmpty()) {
                 item {
                     Card(
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                         colors = CardDefaults.cardColors(containerColor = SuccessGreen.copy(alpha = 0.1f)),
-                        border = BorderStroke(1.dp, SuccessGreen.copy(alpha = 0.4f)),
+                        border = BorderStroke(0.5.dp, SuccessGreen.copy(alpha = 0.4f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
@@ -1327,47 +1333,55 @@ fun RadarAndErrorsSection(
                             fontSize = 11.sp,
                             color = SuccessGreen,
                             fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(14.dp)
+                            modifier = Modifier.padding(12.dp)
                         )
                     }
                 }
             } else {
                 items(errorLogs, key = { it.id }) { error ->
                     Card(
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFEF2F2)),
-                        border = BorderStroke(1.dp, ErrorRed.copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)),
+                        border = BorderStroke(0.5.dp, ErrorRed.copy(alpha = 0.4f)),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("error_card_${error.id}")
                     ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                        Column(modifier = Modifier.padding(10.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(error.paperName, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = ErrorRed)
-                                    Text(error.topicName, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                    Text(error.paperName, fontSize = 9.5.sp, fontWeight = FontWeight.Bold, color = ErrorRed)
+                                    Text(
+                                        text = error.topicName,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
                                 }
 
                                 Button(
                                     onClick = { viewModel.resolveErrorLog(error.id) },
                                     colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
-                                    shape = RoundedCornerShape(6.dp),
-                                    modifier = Modifier.height(28.dp)
+                                    shape = RoundedCornerShape(4.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(24.dp)
                                 ) {
-                                    Text("Mark Resolved ✓", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text("Resolve ✓", fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text("❓ Question: ${error.questionOrConcept}", fontSize = 11.sp, fontWeight = FontWeight.Medium)
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text("❌ Your Mistake: ${error.userMistake}", fontSize = 11.sp, color = ErrorRed, fontWeight = FontWeight.SemiBold)
+                            Text("❓ Question: ${error.questionOrConcept}", fontSize = 10.5.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text("❌ Mistake: ${error.userMistake}", fontSize = 10.5.sp, color = ErrorRed, fontWeight = FontWeight.SemiBold)
                             Spacer(modifier = Modifier.height(2.dp))
-                            Text("✓ Correct Rule: ${error.correctRule}", fontSize = 11.sp, color = SuccessGreen, fontWeight = FontWeight.SemiBold)
+                            Text("✓ Rule: ${error.correctRule}", fontSize = 10.5.sp, color = SuccessGreen, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -1381,45 +1395,51 @@ fun RadarAndErrorsSection(
 // =========================================================================
 @Composable
 fun PastVerdictsSection(
-    dashboard: com.example.ui.viewmodel.VerdictsDashboardState,
+    dashboard: VerdictsDashboardState,
     onRefreshVerdicts: () -> Unit,
     onStartTeachLab: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(bottom = 16.dp)
     ) {
         // Summary Card
         item {
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(12.dp),
                     horizontalArrangement = Arrangement.SpaceAround,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Avg Mastery", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("Avg Mastery", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
                         Text(
                             text = if (dashboard.verdicts.isEmpty()) "--" else "${dashboard.averageScore.toInt()}%",
-                            style = MaterialTheme.typography.headlineMedium,
+                            style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
 
-                    Box(modifier = Modifier.width(1.dp).height(40.dp).background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)))
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(36.dp)
+                            .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f))
+                    )
 
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Graded Sessions", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text("Graded Sessions", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
                         Text(
                             text = "${dashboard.totalSessions}",
-                            style = MaterialTheme.typography.headlineMedium,
+                            style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.ExtraBold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
@@ -1432,36 +1452,40 @@ fun PastVerdictsSection(
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                 ) {
                     Column(
                         modifier = Modifier
-                            .padding(24.dp)
+                            .padding(20.dp)
                             .fillMaxWidth(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(42.dp)
                                 .clip(CircleShape)
                                 .background(Amber500.copy(alpha = 0.2f)),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.School, contentDescription = null, tint = Amber500)
+                            Icon(Icons.Default.School, contentDescription = null, tint = Amber500, modifier = Modifier.size(20.dp))
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                         Text("No Teaching Sessions Yet!", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                        Spacer(modifier = Modifier.height(6.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "Explain a provision in Teach Lab and tap 'Give Verdict' to get graded by ICAI Examiner Lab!",
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Button(onClick = onStartTeachLab, modifier = Modifier.testTag("start_first_teach_button")) {
-                            Text("Start First Session in Teach Lab")
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = onStartTeachLab,
+                            modifier = Modifier.testTag("start_first_teach_button"),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Start First Session in Teach Lab", fontSize = 11.5.sp)
                         }
                     }
                 }
@@ -1483,11 +1507,12 @@ fun VerdictHistoryCard(verdict: LabVerdict) {
             .fillMaxWidth()
             .clickable { expanded = !expanded }
             .testTag("verdict_card_${verdict.topicName.take(6)}"),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1503,72 +1528,75 @@ fun VerdictHistoryCard(verdict: LabVerdict) {
                     Text(
                         text = verdict.topicName,
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(6.dp),
                     color = if (verdict.masteryScore >= 75) SuccessGreen.copy(alpha = 0.15f) else Amber500.copy(alpha = 0.15f)
                 ) {
                     Text(
                         text = "${verdict.masteryScore}/100",
                         fontWeight = FontWeight.ExtraBold,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         color = if (verdict.masteryScore >= 75) SuccessGreen else Amber500,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                     )
                 }
 
                 Icon(
                     imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                     contentDescription = null,
-                    modifier = Modifier.padding(start = 6.dp)
+                    modifier = Modifier.padding(start = 6.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
             AnimatedVisibility(visible = expanded) {
-                Column(modifier = Modifier.padding(top = 12.dp)) {
-                    Text("What You Nailed:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = SuccessGreen)
+                Column(modifier = Modifier.padding(top = 10.dp)) {
+                    Text("What You Nailed:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = SuccessGreen)
                     verdict.whatYouNailed.forEach {
-                        Row(modifier = Modifier.padding(vertical = 2.dp)) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(it, fontSize = 11.sp)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text("What Slipped (Gaps):", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = ErrorRed)
-                    verdict.whatSlipped.forEach {
-                        Row(modifier = Modifier.padding(vertical = 2.dp)) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(it, fontSize = 11.sp)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(8.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Lightbulb, contentDescription = null, tint = Amber500, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("ICAI Examiner Comment", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                            }
-                            Text(verdict.icaiExaminerTip, fontSize = 11.sp)
+                        Row(modifier = Modifier.padding(vertical = 1.dp)) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SuccessGreen, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(it, fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    Text("Next Action: ${verdict.nextAction}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Sky500)
+                    Text("What Slipped (Gaps):", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = ErrorRed)
+                    verdict.whatSlipped.forEach {
+                        Row(modifier = Modifier.padding(vertical = 1.dp)) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = ErrorRed, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(it, fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Lightbulb, contentDescription = null, tint = Amber500, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("ICAI Examiner Comment", fontWeight = FontWeight.Bold, fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurface)
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(verdict.icaiExaminerTip, fontSize = 10.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Text("Next Action: ${verdict.nextAction}", fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, color = Sky500)
                 }
             }
         }
