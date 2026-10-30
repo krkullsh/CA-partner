@@ -34,10 +34,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,7 +48,6 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -70,11 +66,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.data.model.CatalogSortOrder
 import com.example.data.model.ExperienceLevel
 import com.example.data.model.LabMode
 import com.example.data.model.PaperCode
-import com.example.data.model.PriorityTier
 import com.example.data.model.SyllabusTopic
 import com.example.ui.components.SettingsDialog
 import com.example.ui.components.StrategyBlueprintBottomSheet
@@ -103,86 +97,17 @@ fun CaLabApp(viewModel: CaLabViewModel = viewModel()) {
     Scaffold(
         topBar = {
             Column {
-                CenterAlignedTopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(MaterialTheme.colorScheme.primary),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "CA",
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 10.sp,
-                                    color = Color.White
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "CA-Lab",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer
-                            ) {
-                                Text(
-                                    text = currentMode.badge,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                    },
-                    actions = {
-                        // Compact Status Dot indicator (Amber = Offline, Green = Cloud AI)
-                        Box(
-                            modifier = Modifier
-                                .padding(end = 2.dp)
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .clickable { viewModel.toggleSettingsDialog(true) }
-                                .testTag("offline_status_dot"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(if (isOffline) Amber500 else SuccessGreen)
-                            )
-                        }
-
-                        IconButton(
-                            onClick = { viewModel.toggleSettingsDialog(true) },
-                            modifier = Modifier
-                                .size(36.dp)
-                                .testTag("open_settings_button")
-                        ) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(18.dp))
-                        }
-                    },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
-                )
-
-                // Ultra-Compact 34.dp Master Chapter Header
+                // Single unified 36.dp Top Reader Bar: [Book • Chapter] + [Filter ▾] + [Settings ⚙]
                 MasterChapterHeader(
                     activePaper = activePaper,
                     activeTopic = activeTopic,
-                    onOpenFilter = { showContextSheet = true }
+                    isOffline = isOffline,
+                    onOpenFilter = { showContextSheet = true },
+                    onOpenSettings = { viewModel.toggleSettingsDialog(true) }
                 )
 
                 HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
                     thickness = 0.5.dp
                 )
             }
@@ -190,8 +115,9 @@ fun CaLabApp(viewModel: CaLabViewModel = viewModel()) {
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 0.dp,
                 modifier = Modifier
-                    .height(60.dp)
+                    .height(54.dp)
                     .testTag("bottom_nav_bar")
             ) {
                 LabMode.entries.forEach { mode ->
@@ -205,28 +131,28 @@ fun CaLabApp(viewModel: CaLabViewModel = viewModel()) {
                     }
 
                     val label = when (mode) {
-                        LabMode.TEACH_LAB -> "Teach Lab"
-                        LabMode.CATCH_LAB_OUT -> "Catch Traps"
-                        LabMode.ASK_LAB -> "Study & Ask"
-                        LabMode.SPOT_DIFFERENCE -> "Differences"
-                        LabMode.VERDICTS -> "My Progress"
+                        LabMode.TEACH_LAB -> "Teach"
+                        LabMode.CATCH_LAB_OUT -> "Traps"
+                        LabMode.ASK_LAB -> "Study"
+                        LabMode.SPOT_DIFFERENCE -> "Compare"
+                        LabMode.VERDICTS -> "Progress"
                     }
 
                     NavigationBarItem(
                         selected = isSelected,
                         onClick = { viewModel.setMode(mode) },
-                        icon = { Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp)) },
+                        icon = { Icon(icon, contentDescription = label, modifier = Modifier.size(17.dp)) },
                         label = {
                             Text(
                                 text = label,
-                                fontSize = 10.sp,
+                                fontSize = 9.5.sp,
                                 maxLines = 1
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = MaterialTheme.colorScheme.primary,
                             selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                         ),
                         modifier = Modifier.testTag("nav_item_${mode.name}")
                     )
@@ -278,121 +204,126 @@ fun CaLabApp(viewModel: CaLabViewModel = viewModel()) {
 }
 
 /**
- * Ultra-Compact 34.dp Master Chapter Header
- * Maximizes reading viewport to ~90% of screen height.
+ * Single-Line 36.dp Master Header: Shows ONLY [Book Short Name] • [Ch X: Topic Name],
+ * [Filter ▾], and the Settings gear—giving 92% of the screen to the reader content.
  */
 @Composable
 fun MasterChapterHeader(
     activePaper: PaperCode,
     activeTopic: SyllabusTopic,
-    onOpenFilter: () -> Unit
+    isOffline: Boolean = true,
+    onOpenFilter: () -> Unit,
+    onOpenSettings: () -> Unit = {}
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
         modifier = Modifier
             .fillMaxWidth()
-            .height(34.dp)
-            .clickable(onClick = onOpenFilter)
+            .height(38.dp)
             .testTag("master_chapter_header")
             .testTag("sticky_study_context_bar")
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Left & Middle
+            // Left: Book Tag + Ch X: Topic Title (Clickable to switch chapter)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onOpenFilter)
             ) {
-                // Short subject code badge
                 Surface(
                     shape = RoundedCornerShape(4.dp),
-                    color = Color(activePaper.colorHex).copy(alpha = 0.14f),
-                    modifier = Modifier.padding(end = 6.dp)
+                    color = Color(activePaper.colorHex).copy(alpha = 0.14f)
                 ) {
                     Text(
                         text = activePaper.shortName,
                         color = Color(activePaper.colorHex),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                     )
                 }
 
-                // Middle: Ch X: Title
+                Spacer(modifier = Modifier.width(6.dp))
+
                 Text(
                     text = "Ch ${activeTopic.icaiChapterNumber}: ${activeTopic.topicName}",
-                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false)
                 )
-
-                if (activeTopic.hasRecentAmendment) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Surface(
-                        shape = RoundedCornerShape(3.dp),
-                        color = Amber500.copy(alpha = 0.16f)
-                    ) {
-                        Text(
-                            text = "🆕",
-                            fontSize = 8.sp,
-                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
-                        )
-                    }
-                }
-
-                if (activeTopic.priorityTier == PriorityTier.TIER_1) {
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Surface(
-                        shape = RoundedCornerShape(3.dp),
-                        color = Color(0xFFEF4444).copy(alpha = 0.14f)
-                    ) {
-                        Text(
-                            text = "T1",
-                            color = Color(0xFFEF4444),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 8.sp,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                        )
-                    }
-                }
             }
 
             Spacer(modifier = Modifier.width(6.dp))
 
-            // Right: Sleek 28.dp height [Filter ▾] button
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-                modifier = Modifier
-                    .height(26.dp)
-                    .clickable(onClick = onOpenFilter)
-                    .testTag("filter_dropdown_button")
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+            // Right: Compact 24.dp [Filter ▾] + Offline Dot + Settings Gear
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(5.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                    modifier = Modifier
+                        .height(24.dp)
+                        .clickable(onClick = onOpenFilter)
+                        .testTag("filter_dropdown_button")
                 ) {
-                    Text(
-                        text = "Filter",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 7.dp)
+                    ) {
+                        Text(
+                            text = "Chapter",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Switch Chapter",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onOpenSettings)
+                        .testTag("offline_status_dot"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(if (isOffline) Amber500 else SuccessGreen)
                     )
-                    Spacer(modifier = Modifier.width(2.dp))
+                }
+
+                IconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .testTag("open_settings_button")
+                ) {
                     Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Open Filters",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(13.dp)
+                        Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -400,7 +331,6 @@ fun MasterChapterHeader(
     }
 }
 
-// Backward-compatible alias
 @Composable
 fun StickyStudyContextBar(
     activePaper: PaperCode,
@@ -414,10 +344,6 @@ fun StickyStudyContextBar(
     )
 }
 
-/**
- * Filter Sheet housing Secondary Controls:
- * Paper selector, Topic search & list, Tier sort order, Experience level, Strategy Blueprint
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StudyContextBottomSheet(
@@ -430,10 +356,9 @@ fun StudyContextBottomSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedPaper by remember(currentPaper) { mutableStateOf(currentPaper) }
     var searchQuery by remember { mutableStateOf("") }
-    val catalogSortOrder by viewModel.catalogSortOrder.collectAsState()
     val experienceLevel by viewModel.experienceLevel.collectAsState()
 
-    val sortedTopics = remember(selectedPaper, catalogSortOrder) {
+    val sortedTopics = remember(selectedPaper) {
         viewModel.getSortedTopicsForPaper(selectedPaper)
     }
 
@@ -453,96 +378,77 @@ fun StudyContextBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp)
+                .padding(horizontal = 14.dp)
+                .padding(bottom = 20.dp)
         ) {
-            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(
-                        text = "Study Context & Filters",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Customize active subject, topic, and grading persona",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(18.dp))
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Quick Strategy Blueprint Trigger
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenBlueprint)
-                    .testTag("filter_open_blueprint_button")
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.MenuBook,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "View ${selectedPaper.shortName} Strategy Blueprint & 3-Column Tables",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                Text(
+                    text = "Select Book & Chapter",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(5.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier
+                            .height(24.dp)
+                            .clickable(onClick = onOpenBlueprint)
+                            .testTag("filter_open_blueprint_button")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 7.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.MenuBook,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${selectedPaper.shortName} Blueprint",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
-                    Text(
-                        text = "Open ▸",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", modifier = Modifier.size(16.dp))
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Horizontal Paper Chips
+            // Compact Book / Paper Selector Pills (26.dp)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 PaperCode.entries.forEach { paper ->
                     val isSelected = selectedPaper == paper
                     Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = if (isSelected) Color(paper.colorHex).copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
-                        border = if (isSelected) BorderStroke(1.dp, Color(paper.colorHex)) else BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(5.dp),
+                        color = if (isSelected) Color(paper.colorHex).copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(0.5.dp, if (isSelected) Color(paper.colorHex) else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
                         modifier = Modifier
-                            .height(28.dp)
+                            .height(26.dp)
                             .clickable { selectedPaper = paper }
                     ) {
                         Text(
                             text = paper.shortName,
-                            fontSize = 11.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            fontSize = 10.5.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                             color = if (isSelected) Color(paper.colorHex) else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
@@ -550,119 +456,81 @@ fun StudyContextBottomSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Secondary Controls: Sort Order & Experience Level in a compact strip
+            // Search + Persona Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Sort Order
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Sort: ", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = if (catalogSortOrder == CatalogSortOrder.OFFICIAL_ICAI) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier
-                            .height(24.dp)
-                            .clickable { viewModel.setCatalogSortOrder(CatalogSortOrder.OFFICIAL_ICAI) }
-                    ) {
-                        Text(
-                            text = "ICAI Ch #",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = if (catalogSortOrder == CatalogSortOrder.PRIORITY_TIER) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier
-                            .height(24.dp)
-                            .clickable { viewModel.setCatalogSortOrder(CatalogSortOrder.PRIORITY_TIER) }
-                    ) {
-                        Text(
-                            text = "Tier 1 First",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                        )
-                    }
-                }
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search chapter or standard...", fontSize = 11.sp) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(40.dp),
+                    shape = RoundedCornerShape(6.dp),
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(15.dp)) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    )
+                )
 
-                // Experience Level
+                // Compact Persona Switcher
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Persona: ", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     ExperienceLevel.entries.forEach { exp ->
                         val isExp = experienceLevel == exp
                         val shortLabel = when (exp) {
-                            ExperienceLevel.NOVICE -> "Novice"
-                            ExperienceLevel.KNOWLEDGED -> "Inter"
+                            ExperienceLevel.NOVICE -> "Nov"
+                            ExperienceLevel.KNOWLEDGED -> "Int"
                             ExperienceLevel.EXAM_READY -> "Exam"
                         }
                         Surface(
                             shape = RoundedCornerShape(4.dp),
                             color = if (isExp) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                             modifier = Modifier
-                                .height(24.dp)
-                                .padding(start = 3.dp)
+                                .height(26.dp)
+                                .padding(start = 2.dp)
                                 .clickable { viewModel.setExperienceLevel(exp) }
                         ) {
                             Text(
                                 text = shortLabel,
-                                fontSize = 10.sp,
+                                fontSize = 9.5.sp,
                                 fontWeight = if (isExp) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isExp) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 3.dp)
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 4.dp)
                             )
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Search Bar (Compact 36dp)
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search chapter, standard, or section...", fontSize = 11.sp) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp),
-                shape = RoundedCornerShape(8.dp),
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
-                )
-            )
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Topics List
+            // Clean Chapter List (Showing only Book/Ch # + Title + Past Paper Frequency)
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 380.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 items(filteredTopics, key = { it.id }) { topic ->
                     val isCurrent = topic.id == currentTopic.id
                     Card(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(6.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = if (isCurrent)
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                             else
                                 MaterialTheme.colorScheme.surface
                         ),
                         border = BorderStroke(
                             0.5.dp,
-                            if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
+                            if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -674,62 +542,28 @@ fun StudyContextBottomSheet(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                .padding(horizontal = 10.dp, vertical = 7.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Ch ${topic.icaiChapterNumber} • ${topic.chapter}",
-                                    fontSize = 10.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = topic.topicName,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
+                            Text(
+                                text = "Ch ${topic.icaiChapterNumber} • ${topic.topicName}",
+                                fontSize = 11.5.sp,
+                                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
 
                             Spacer(modifier = Modifier.width(6.dp))
 
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (topic.hasRecentAmendment) {
-                                    Surface(
-                                        shape = RoundedCornerShape(3.dp),
-                                        color = Amber500.copy(alpha = 0.18f),
-                                        modifier = Modifier.padding(end = 4.dp)
-                                    ) {
-                                        Text(
-                                            text = "🆕 Updated",
-                                            color = Amber500,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 8.sp,
-                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                        )
-                                    }
-                                }
-
-                                Surface(
-                                    shape = RoundedCornerShape(3.dp),
-                                    color = Color(topic.priorityTier.badgeColorHex).copy(alpha = 0.14f)
-                                ) {
-                                    Text(
-                                        text = when (topic.priorityTier) {
-                                            PriorityTier.TIER_1 -> "Tier 1"
-                                            PriorityTier.TIER_2 -> "Tier 2"
-                                            PriorityTier.TIER_3 -> "Tier 3"
-                                            PriorityTier.TIER_4 -> "Tier 4"
-                                        },
-                                        color = Color(topic.priorityTier.badgeColorHex),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 9.sp,
-                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
+                            Text(
+                                text = "${topic.averageMarks.toInt()}M",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Amber500
+                            )
                         }
                     }
                 }
